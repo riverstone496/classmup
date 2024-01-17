@@ -8,15 +8,16 @@ def create_optimizer(args, model, lr, head_only = False):
     param_groups = []
     for name, param in model.named_parameters():
         # レイヤー名に応じて学習率を調整
+        layer_lr = lr
         if 'input' in name:
-            lr *= (1 / args.width) ** args.c_input
+            layer_lr *= (args.base_width / args.width) ** args.c_input
         elif 'output' in name:
-            lr *= (1 / args.width) ** args.c_output
+            layer_lr *= (args.base_width / args.width) ** args.c_output
 
-        if args.head_only and 'output' not in name:
-            lr = 0
+        if head_only and 'output' not in name:
+            layer_lr = 0
 
-        param_groups.append({'params': param, 'lr': lr})
+        param_groups.append({'params': param, 'lr': layer_lr})
 
     # オプティマイザの選択と初期化
     if args.optim == 'sgd':

@@ -175,7 +175,10 @@ def train(epoch, optimizer, scheduler, prefix = '', train_iterations=-1):
         y = model(x)
         loss = loss_func(y,t2)
         loss.backward()
-        optimizer.step()
+        grad_norm = get_grad_norm(model)
+        if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
         
         if batch_idx%100==0 and args.wandb:
             pred = y.data.max(1)[1]
@@ -184,7 +187,6 @@ def train(epoch, optimizer, scheduler, prefix = '', train_iterations=-1):
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
             l1_norm, l2_norm = get_weight_norm(model)
-            grad_norm = get_grad_norm(model)
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:
@@ -373,7 +375,6 @@ if __name__=='__main__':
                         help='sched_power')
     parser.add_argument('--warmup_epochs', type=int, default=0,
                         help='sched_power')
-    parser.add_argument('--head_only', action='store_true', default=False)
     
     parser.add_argument('--save_ckpt', action='store_true', default=False)
 
