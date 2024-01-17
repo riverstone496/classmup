@@ -365,6 +365,7 @@ def train():
     )
 
     vocab_size = len(vocab.get_stoi())
+    wandb.run.summary['vocab_size'] = vocab_size
     print(f"Vocabulary size: {vocab_size}")
 
     if args.model_name == "cbow":
@@ -556,7 +557,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=5, help='Number of epochs to train')
     parser.add_argument('--train_steps', type=int, default=None, help='Number of training steps per epoch')
     parser.add_argument('--val_steps', type=int, default=None, help='Number of validation steps per epoch')
-    parser.add_argument('--optim', type=str, choices=['sgd','adam','kfac_emp','shampoo','ngd_diag','adam_asdl','foof','adam_kfac_emp','adam_shampoo'], default='shampoo', help='Optimizer name (Adam)')
+    parser.add_argument('--optim', type=str, choices=['sgd','adam','adamw'], default='sgd', help='Optimizer name (Adam)')
     parser.add_argument('--lr', type=float, default=0.025, help='Learning rate')
     parser.add_argument('--checkpoint_frequency', type=int, default=1, help='Frequency of saving model checkpoints')
     parser.add_argument('--embed_dim', type=int, default=256, help='Embedding dimension')
@@ -606,6 +607,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.embed_max_norm == -1:
         args.embed_max_norm = None
+    args.width = args.embed_dim
     config = vars(args).copy()
     if args.wandb:
         wandb.init( config=config,
@@ -656,13 +658,35 @@ if __name__ == '__main__':
             args.c_output=0
             args.c_input=0
             args.c_hidden=0
-        if 'shampoo' in args.optim:
+    if args.parametrization == 'UP':
+        if args.optim == 'sgd':
             args.b_output=1/2
-            args.b_input=1/2
             args.b_hidden=1/2
-            args.c_output=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=1
+            args.c_input=0
+        if 'kfac' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
             args.c_hidden=0
-            args.c_input=-1/2
+            args.c_input=0
+        if args.optim == 'shampoo':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1/2
+            args.c_hidden=1/2
+            args.c_input=0
+        if 'foof' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
     if args.parametrization == 'muP':
         if args.optim == 'sgd':
             args.b_output=1
@@ -679,11 +703,72 @@ if __name__ == '__main__':
             args.c_hidden=0
             args.c_input=0
         if args.optim == 'shampoo':
-            args.b_input=1/2
-            args.b_hidden=1/2
             args.b_output=1
-            args.c_input=-1/2
-            args.c_hidden=0
+            args.b_hidden=1/2
+            args.b_input=1/2
             args.c_output=1/2
+            args.c_hidden=0
+            args.c_input=-1/2
+        if 'foof' in args.optim:
+            args.b_output=1
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=-1
+            args.c_input=-1
+    if args.parametrization == 'muP_output_zero':
+        args.output_zero = True
+        if args.optim == 'sgd':
+            args.b_output=128
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=0
+            args.c_input=-1
+        if 'kfac' in args.optim:
+            args.b_output=128
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+        if args.optim == 'shampoo':
+            args.b_output=128
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1/2
+            args.c_hidden=0
+            args.c_input=-1/2
+        if 'foof' in args.optim:
+            args.b_output=128
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=-1
+            args.c_input=-1
+    if args.parametrization == 'class_muP':
+        if args.optim == 'sgd':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=-1
+    if args.parametrization == 'class_muP_output_zero':
+        args.output_zero = False
+        if args.optim == 'sgd':
+            args.b_output=128
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=-1
+    if args.parametrization == 'kfac_muP':
+        args.b_output=1
+        args.b_hidden=1/2
+        args.b_input=1/2
+        args.c_output=0
+        args.c_hidden=0
+        args.c_input=0
 
     train()
