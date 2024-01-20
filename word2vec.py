@@ -22,6 +22,7 @@ from models.create_model import initialize_weight
 import torch.nn.functional as F
 
 from utils.create_optim import create_optimizer
+from collections import Counter
 
 CBOW_N_WORDS = 4
 SKIPGRAM_N_WORDS = 4
@@ -64,12 +65,22 @@ class Trainer:
         self.loss = {"train": [], "val": []}
         self.model.to(self.device)
 
+        if args.log_h_delta:
+            for i, data in enumerate(self.val_dataloader, 0):
+                inputs, labels = data
+                self.inputs_for_dh = inputs.to(device)
+                break
+            self.init_pre_act_dict = self.fetch_h(model)
+
     def train(self):
+        Analogy_Acc_Max = 0
         initial_params = [param.clone() for param in self.model.parameters()]
         evaluate_word_analogy(self.model.input_layer.weight.data, self.vocab, analogy_dataset)
         for epoch in range(self.epochs):
             self._train_epoch(epoch, initial_params)
             self._validate_epoch()
+            if args.log_h_delta:
+                self.log_h_delta(epoch=epoch)
             print(
                 "Epoch: {}/{}, Train Loss={:.5f}, Val Loss={:.5f}".format(
                     epoch + 1,
@@ -84,12 +95,15 @@ class Trainer:
                 self.lr_scheduler.step()
             if self.checkpoint_frequency:
                 self._save_checkpoint(epoch)
+            if 100*acc > Analogy_Acc_Max:
+                Analogy_Acc_Max = 100*acc
             if args.wandb:
                 log = { 'epoch': epoch+1,
                         'iteration': (epoch+1) * len(self.train_dataloader),
                         'train_loss': self.loss["train"][-1],
                         'val_loss': self.loss["val"][-1],
-                        'Analogy_Acc': 100*acc}
+                        'Analogy_Acc': 100*acc,
+                        'Analogy_Acc_Max': Analogy_Acc_Max}
                 wandb.log(log)
             if math.isnan(self.loss["val"][-1]) or self.loss["val"][-1]>20:
                 print('Error: Train loss is nan', file=sys.stderr)
@@ -183,6 +197,33 @@ class Trainer:
         with open(loss_path, "w") as fp:
             json.dump(self.loss, fp)
     
+    def fetch_h(self, model):
+        model = register_fhook(model)
+        y = model(self.inputs_for_dh)
+        pre_act_dict = {}
+        for name, module in model.named_modules():
+            if len(list(module.children())) > 0:
+                  continue
+            if all(not p.requires_grad for p in module.parameters()):
+                continue
+            pre_act_dict[name] = module.out_data
+        return pre_act_dict
+    
+    def log_h_delta(self, epoch, prefix = ''):
+        pre_act_dict = self.fetch_h(self.model)
+        h_norm_dict = {}
+        dh_norm_dict = {}
+        for mname in pre_act_dict.keys():
+            h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
+            dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - self.init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
+        print(dh_norm_dict)
+        if args.wandb:
+            log = {prefix + 'epoch': epoch+1,
+                   prefix + 'iteration': epoch * len(self.train_dataloader),
+                   prefix + 'h/':h_norm_dict,
+                   prefix + 'dh/': dh_norm_dict,}
+            wandb.log(log)
+
 def get_lr_scheduler(optimizer, total_epochs: int, verbose: bool = True):
     """
     Scheduler to linearly decrease learning rate, 
@@ -230,12 +271,24 @@ def get_data_iterator(ds_name, ds_type, data_dir):
 
 def build_vocab(data_iter, tokenizer):
     """Builds vocabulary from iterator"""
-    
-    vocab = build_vocab_from_iterator(
-        map(tokenizer, data_iter),
-        specials=["<unk>"],
-        min_freq=args.min_word_frequency,
-    )
+    if args.vocab_size != -1:
+        counter = Counter()
+        for line in data_iter:
+            counter.update(tokenizer(line))
+        # Select the top `max_vocab_size` most frequent words
+        most_common_words = [word for word, _ in counter.most_common(args.vocab_size)]
+        # Build vocabulary from these words
+        vocab = build_vocab_from_iterator(
+            ([word] for word in most_common_words),
+            specials=["<unk>"]
+        )
+    else:
+        vocab = build_vocab_from_iterator(
+            map(tokenizer, data_iter),
+            specials=["<unk>"],
+            min_freq=args.min_word_frequency,
+        )
+
     vocab.set_default_index(vocab["<unk>"])
     return vocab
 
@@ -372,6 +425,7 @@ def train():
         model = CBOW_Model(vocab_size=vocab_size, embed_dim = args.embed_dim, embed_max_norm=args.embed_max_norm, bias=args.bias)
     if args.model_name == "skipgram":
         model = SkipGram_Model(vocab_size=vocab_size, embed_dim = args.embed_dim, embed_max_norm=args.embed_max_norm, bias=args.bias)
+    print(model)
     model = initialize_weight(  model,
                                 b_input=args.b_input,
                                 b_hidden=args.b_hidden,
@@ -380,6 +434,7 @@ def train():
                                 output_var_mult=args.output_var_mult,
                                 width=args.embed_dim / args.base_width,
                                 embed_std=args.embed_std)
+
     if args.loss_type == 'nll':
         criterion = nn.NLLLoss()
     if args.loss_type == 'cross_entropy':
@@ -391,7 +446,7 @@ def train():
 
     if args.log_activation:
         model = register_fhook(model)
-    optimizer = create_optimizer(args, model, lr = args.lr, head_only=False)
+    optimizer = create_optimizer(args, model, lr = args.lr, input_lr_const=args.input_lr_const, head_only=False)
     lr_scheduler = get_lr_scheduler(optimizer, args.epochs, verbose=True)
     
     trainer = Trainer(
@@ -563,6 +618,7 @@ if __name__ == '__main__':
     parser.add_argument('--embed_dim', type=int, default=256, help='Embedding dimension')
     parser.add_argument('--embed_max_norm', type=int, default=None, help='Embedding max norm')
     parser.add_argument('--min_word_frequency', type=int, default=128, help='min_word_frequency')
+    parser.add_argument('--vocab_size', type=int, default=-1, help='min_word_frequency')
 
     parser.add_argument('--damping', type=float, default=1e-4, help='damping')
     parser.add_argument('--accumulate_iters', type=int, default=-1, help='accumulate_iters')
@@ -598,15 +654,22 @@ if __name__ == '__main__':
     parser.add_argument('--base_width', type=int, default=128)
     parser.add_argument('--output_zero', action='store_true', default=False)
     parser.add_argument('--embed_std', type=float, default=1)
+    parser.add_argument('--input_lr_const', type=float, default=1, help='Learning rate')
 
+    parser.add_argument('--log_h_delta', action='store_true', default=False,
+                        help='how many batches to wait before logging training status')
+    
     parser.add_argument('--bias', action='store_true', default=False)
     parser.add_argument('--log_activation', action='store_true', default=False)
     parser.add_argument('--wandb', action='store_false', default=True)
+    parser.add_argument('--scaling_by_class', action='store_true', default=False)
 
 
     args = parser.parse_args()
     if args.embed_max_norm == -1:
         args.embed_max_norm = None
+    if args.scaling_by_class:
+        args.vocab_size = int(2 * args.embed_dim)
     args.width = args.embed_dim
     config = vars(args).copy()
     if args.wandb:
@@ -754,6 +817,14 @@ if __name__ == '__main__':
             args.c_output=0
             args.c_hidden=0
             args.c_input=-1
+    if args.parametrization == 'class_muP_word2vec':
+        if args.optim == 'sgd':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
     if args.parametrization == 'class_muP_output_zero':
         args.output_zero = False
         if args.optim == 'sgd':

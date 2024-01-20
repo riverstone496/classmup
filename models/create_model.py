@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from .wideresnet import WideResNet
+import timm
 
 def calculate_fan_in_fan_out(module):
     parameters = list(module.parameters())
@@ -59,7 +60,7 @@ def initialize_weight(model,b_input=0.5,b_hidden=0.5,b_output=0.5,output_nonzero
                 fan_in = width
                 fan_out = width
         if isinstance(m,nn.Embedding):
-            nn.init.normal_(m.weight.data, mean=0, std=embed_std)
+            nn.init.normal_(m.weight.data, mean=0, std=embed_std / (fan_in**0.5))
         else:
             nn.init.kaiming_normal_(m.weight.data, a=1, mode='fan_in')
         if 'input' in name or 'block1.layer.0.conv1.weight' in name:
@@ -113,4 +114,16 @@ def create_model(img_size, num_classes, num_channels, args):
         model = ResNet18NoPool(num_classes=num_classes,width=args.width, num_channels=num_channels, withoutShortcut = args.withoutShortcut, withoutBN=args.withoutBN)
     elif args.model == 'vgg19':
         model = VGG(vgg_name='VGG19', scale_factor=args.width, num_classes=num_classes, num_channels=num_channels, base_width=args.base_width)
+    return model
+
+def create_finetune_model(num_classes, args):
+    model = timm.create_model(model_name = args.model, pretrained=True, num_classes= num_classes)
+    if hasattr(model, 'head'):
+        m = model.head
+    elif hasattr(model, 'fc'):
+        m = model.fc
+    if args.output_nonzero:
+        nn.init.kaiming_normal_(m.weight.data, a=1, mode='fan_in')
+    else:
+        nn.init.zeros_(m.weight.data)
     return model
