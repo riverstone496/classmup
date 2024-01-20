@@ -189,6 +189,30 @@ class CIFAR100(Dataset):
                                             download=True)
         super().__init__(args)
 
+class STL(Dataset):
+    def __init__(self, args):
+        self.num_classes = 10
+        self.img_size = 32
+        self.num_channels = 3
+        self.create_transform(args)
+
+        # train dataset
+        self.train_dataset = torchvision.datasets.STL10(root='data/',
+                                        split='train',
+                                        transform=self.train_transform,
+                                        download=True)
+        # val dataset
+        self.train_val_dataset = torchvision.datasets.STL10(root='data/',
+                                        split='train',
+                                        transform=self.val_transform,
+                                        download=True)
+
+        self.val_dataset = torchvision.datasets.STL10(root='data/',
+                                        split='test',
+                                        transform=self.val_transform,
+                                        download=True)
+        super().__init__(args)
+
 class SVHN(Dataset):
     def __init__(self, args):
         self.num_classes = 10

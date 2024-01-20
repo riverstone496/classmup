@@ -21,7 +21,7 @@ from utils.loss_type import CustomCrossEntropyLossWithL2Reg, CustomMSELossWithL2
 from utils.create_optim import create_optimizer, create_optimizer_for_head
 import warmup_scheduler
 
-dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST']
+dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
 max_validation_acc=0
 min_validation_loss=np.inf
@@ -555,6 +555,8 @@ if __name__=='__main__':
         dataset = utils.dataset.CIFAR10(args=args)
     elif args.dataset == 'CIFAR100':
         dataset = utils.dataset.CIFAR100(args=args)
+    elif args.dataset == 'STL10':
+        dataset = utils.dataset.STL(args=args)
     elif args.dataset == 'SVHN':
         dataset = utils.dataset.SVHN(args=args)
     elif args.dataset == 'Flowers':

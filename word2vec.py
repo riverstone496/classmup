@@ -446,7 +446,7 @@ def train():
 
     if args.log_activation:
         model = register_fhook(model)
-    optimizer = create_optimizer(args, model, lr = args.lr, input_lr_const=args.input_lr_const, head_only=False)
+    optimizer = create_optimizer(args, model, lr = args.lr, input_lr_const=args.input_lr_const)
     lr_scheduler = get_lr_scheduler(optimizer, args.epochs, verbose=True)
     
     trainer = Trainer(

@@ -33,9 +33,9 @@ def create_optimizer_for_head(args, model, lr, input_lr_const=1):
 
     # オプティマイザの選択と初期化
     if args.optim == 'sgd':
-        optimizer = SGD(param_groups, momentum=args.momentum, weight_decay=args.weight_decay)
+        optimizer = SGD(param_groups, momentum=args.momentum)
     elif args.optim == 'adam':
-        optimizer = Adam(param_groups, weight_decay=args.weight_decay)
+        optimizer = Adam(param_groups)
     else:
         raise ValueError("Unsupported optimizer type: {}".format(args.optim))
 
