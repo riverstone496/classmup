@@ -3,7 +3,7 @@ import torch
 import torch
 from torch.optim import SGD, Adam
 
-def create_optimizer(args, model, lr, input_lr_const=1):
+def create_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
     # レイヤーごとにパラメータを設定
     param_groups = []
     for name, param in model.named_parameters():
@@ -12,7 +12,7 @@ def create_optimizer(args, model, lr, input_lr_const=1):
         if 'input' in name:
             layer_lr *= input_lr_const * (args.base_width / args.width) ** args.c_input
         elif 'output' in name or 'head' in name:
-            layer_lr *= (args.base_width / args.width) ** args.c_output
+            layer_lr *= output_lr_const * (args.base_width / args.width) ** args.c_output
         param_groups.append({'params': param, 'lr': layer_lr})
     # オプティマイザの選択と初期化
     if args.optim == 'sgd':

@@ -446,7 +446,7 @@ def train():
 
     if args.log_activation:
         model = register_fhook(model)
-    optimizer = create_optimizer(args, model, lr = args.lr, input_lr_const=args.input_lr_const)
+    optimizer = create_optimizer(args, model, lr = args.lr, input_lr_const=args.input_lr_const, output_lr_const=args.output_lr_const)
     lr_scheduler = get_lr_scheduler(optimizer, args.epochs, verbose=True)
     
     trainer = Trainer(
@@ -655,6 +655,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_zero', action='store_true', default=False)
     parser.add_argument('--embed_std', type=float, default=1)
     parser.add_argument('--input_lr_const', type=float, default=1, help='Learning rate')
+    parser.add_argument('--output_lr_const', type=float, default=1, help='Learning rate')
 
     parser.add_argument('--log_h_delta', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
