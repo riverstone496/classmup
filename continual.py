@@ -498,7 +498,7 @@ if __name__=='__main__':
                         help='how many batches to wait before logging training status')
     parser.add_argument('--log_damping', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--num_workers', type=int, default=6)
+    parser.add_argument('--num_workers', type=int, default=3)
     parser.add_argument('--train_size', type=int, default=-1)
 
     parser.add_argument('--widen_factor', type=int, default=4)
@@ -585,7 +585,7 @@ if __name__=='__main__':
 
     if args.pseudo_batch_size != -1:
         args.batch_size=args.pseudo_batch_size
-    model = MultiHeadModel(args=args, num_classes = dataset.num_classes)
+    model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
 
     for task_num in range(2):
         # Head_Init_Iters

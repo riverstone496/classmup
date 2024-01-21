@@ -11,32 +11,7 @@ from .autoaugment import CIFAR10Policy
 
 class Dataset(object):
     def __init__(self, args):
-        # Data Loader (Input Pipeline)
-        self.train_loader = []
-        self.train_val_loader = []
-        self.val_loader = []
-        for i in range(len(self.task_classes)):
-            self.train_loader.append( torch.utils.data.DataLoader(dataset=self.train_dataset,
-                                                        batch_size=args.batch_size,
-                                                        shuffle=args.dataset_shuffle,
-                                                        pin_memory=True,
-                                                        num_workers=args.num_workers)
-            )
-            self.train_val_loader.append( torch.utils.data.DataLoader(dataset=self.train_val_dataset,
-                                                        batch_size=args.val_batch_size,
-                                                        shuffle=False,
-                                                        pin_memory=True,
-                                                        num_workers=args.num_workers)
-            )
-            self.val_loader.append( torch.utils.data.DataLoader(dataset=self.val_dataset,
-                                                        batch_size=args.val_batch_size,
-                                                        shuffle=False,
-                                                        pin_memory=True,
-                                                        num_workers=args.num_workers)
-            )
-
         self.num_steps_per_epoch = len(self.train_loader)
-
 
     def create_transform(self,args):
         self.train_transform = transforms.Compose([])
@@ -141,7 +116,7 @@ class CIFAR10(Dataset):
         self.num_classes = 10
         self.num_channels = 3
         self.img_size = 32
-        self.task_classes = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]
+        self.task_classes = [list(range(50)),list(range(50,100))]
         self.create_transform(args)
 
         if args.cutout:
@@ -162,28 +137,45 @@ class CIFAR10(Dataset):
                                             download=True,
                                             transform=self.val_transform)
         
-        self.train_dataset = []
-        self.train_val_dataset = []
-        self.val_dataset = []
+
+        # Data Loader (Input Pipeline)
+        self.train_loader = []
+        self.train_val_loader = []
+        self.val_loader = []
+
         for classes in self.task_classes:
             task_trainset = [data for data in self.train_dataset_all if data[1] in classes]
             task_train_val_set = [data for data in self.train_val_dataset_all if data[1] in classes]
             task_valset = [data for data in self.val_dataset_all if data[1] in classes]
-            self.train_dataset.append(task_trainset)
-            self.train_val_dataset.append(task_train_val_set)
-            self.val_dataset.append(task_valset)
-
-        ## split dataset
-        if args.train_size != -1:
-            indices = list(range(len(self.train_dataset)))
-            np.random.shuffle(indices)
-            train_idx = indices[:args.train_size]
-            for i in range(len(self.train_dataset)):
-                self.train_dataset[i] = Subset(self.train_dataset[i], train_idx)
-                self.train_val_dataset[i]= Subset(self.train_val_dataset[i], train_idx)
+            if args.train_size != -1:
+                indices = list(range(len(task_trainset)))
+                np.random.shuffle(indices)
+                train_idx = indices[:args.train_size]
+                task_trainset = Subset(task_trainset, train_idx)
+                task_train_val_set= Subset(task_train_val_set, train_idx)
+                
+            self.train_loader.append( torch.utils.data.DataLoader(dataset=task_trainset,
+                                                        batch_size=args.batch_size,
+                                                        shuffle=args.dataset_shuffle,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+            )
+            self.train_val_loader.append( torch.utils.data.DataLoader(dataset=task_train_val_set,
+                                                        batch_size=args.val_batch_size,
+                                                        shuffle=False,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+            )
+            self.val_loader.append( torch.utils.data.DataLoader(dataset=task_valset,
+                                                        batch_size=args.val_batch_size,
+                                                        shuffle=False,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+            )      
+        
         super().__init__(args)
 
-class CIFAR10(Dataset):
+class CIFAR100(Dataset):
     def __init__(self, args):
         self.num_classes = 100
         self.num_channels = 3
@@ -209,25 +201,42 @@ class CIFAR10(Dataset):
                                             download=True,
                                             transform=self.val_transform)
         
-        self.train_dataset = []
-        self.train_val_dataset = []
-        self.val_dataset = []
+
+        # Data Loader (Input Pipeline)
+        self.train_loader = []
+        self.train_val_loader = []
+        self.val_loader = []
+
         for classes in self.task_classes:
             task_trainset = [data for data in self.train_dataset_all if data[1] in classes]
             task_train_val_set = [data for data in self.train_val_dataset_all if data[1] in classes]
             task_valset = [data for data in self.val_dataset_all if data[1] in classes]
-            self.train_dataset.append(task_trainset)
-            self.train_val_dataset.append(task_train_val_set)
-            self.val_dataset.append(task_valset)
-
-        ## split dataset
-        if args.train_size != -1:
-            indices = list(range(len(self.train_dataset)))
-            np.random.shuffle(indices)
-            train_idx = indices[:args.train_size]
-            for i in range(len(self.train_dataset)):
-                self.train_dataset[i] = Subset(self.train_dataset[i], train_idx)
-                self.train_val_dataset[i]= Subset(self.train_val_dataset[i], train_idx)
+            if args.train_size != -1:
+                indices = list(range(len(task_trainset)))
+                np.random.shuffle(indices)
+                train_idx = indices[:args.train_size]
+                task_trainset = Subset(task_trainset, train_idx)
+                task_train_val_set= Subset(task_train_val_set, train_idx)
+                
+            self.train_loader.append( torch.utils.data.DataLoader(dataset=task_trainset,
+                                                        batch_size=args.batch_size,
+                                                        shuffle=args.dataset_shuffle,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+            )
+            self.train_val_loader.append( torch.utils.data.DataLoader(dataset=task_train_val_set,
+                                                        batch_size=args.val_batch_size,
+                                                        shuffle=False,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+            )
+            self.val_loader.append( torch.utils.data.DataLoader(dataset=task_valset,
+                                                        batch_size=args.val_batch_size,
+                                                        shuffle=False,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+            )      
+        
         super().__init__(args)
 
 class STL(Dataset):
