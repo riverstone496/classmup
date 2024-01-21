@@ -127,3 +127,29 @@ def create_finetune_model(num_classes, args):
     else:
         nn.init.zeros_(m.weight.data)
     return model
+
+class MultiHeadModel(nn.Module):
+    def __init__(self, args, num_classes):
+        super(MultiHeadModel, self).__init__()
+        self.base_model = timm.create_model(model_name = args.model, pretrained=True)
+        if hasattr(self.base_model, 'head'):
+            self.base_model.head = nn.Identity()  # 元のheadを除去
+        elif hasattr(self.base_model, 'fc'):
+            self.base_model.fc = nn.Identity()  # 元のheadを除去
+        self.head1 = nn.Linear(self.base_model.num_features, num_classes//2)  # Task 1のhead
+        self.head2 = nn.Linear(self.base_model.num_features, num_classes//2)  # Task 2のhead
+
+        if args.output_nonzero:
+            nn.init.kaiming_normal_(self.head1.weight.data, a=1, mode='fan_in')
+            nn.init.kaiming_normal_(self.head2.weight.data, a=1, mode='fan_in')
+        else:
+            nn.init.zeros_(self.head1.weight.data)
+            nn.init.zeros_(self.head2.weight.data)
+
+    def forward(self, x, task):
+        x = self.base_model(x)
+        if task == 1:
+            x = self.head1(x)
+        elif task == 2:
+            x = self.head2(x)
+        return x
