@@ -131,7 +131,10 @@ def create_finetune_model(num_classes, args):
 class MultiHeadModel(nn.Module):
     def __init__(self, args, num_classes):
         super(MultiHeadModel, self).__init__()
-        self.base_model = timm.create_model(model_name = args.model, pretrained=True)
+        if args.use_cifar_model:
+            self.base_model = create_model(32, num_classes, 3, args)
+        else:
+            self.base_model = timm.create_model(model_name = args.model, pretrained=True)
         if hasattr(self.base_model, 'head'):
             self.base_model.head = nn.Identity()  # 元のheadを除去
         elif hasattr(self.base_model, 'fc'):

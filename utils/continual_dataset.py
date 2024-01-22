@@ -11,7 +11,7 @@ from .autoaugment import CIFAR10Policy
 
 class Dataset(object):
     def __init__(self, args):
-        self.num_steps_per_epoch = len(self.train_loader)
+        self.num_steps_per_epoch = len(self.train_loader) // 2
 
     def create_transform(self,args):
         self.train_transform = transforms.Compose([])

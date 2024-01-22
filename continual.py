@@ -63,6 +63,8 @@ def val(epoch, prefix = '', task_index = 0):
     with torch.no_grad():
         for data, target in dataset.val_loader[task_index]:
             data, target = data.to(device), target.to(device)
+            if task_index == 1:
+                target -= dataset.num_classes // 2
             output = model(data, task_index)
             test_loss += F.cross_entropy(output, target, reduction='sum').item()
             pred = output.argmax(dim=1, keepdim=True)
@@ -99,6 +101,8 @@ def trainloss_all(epoch, prefix = '', task_index = 0):
     with torch.no_grad():
         for data, target in dataset.train_val_loader[task_index]:
             data, target = data.to(device), target.to(device)
+            if task_index == 1:
+                target -= dataset.num_classes // 2
             output = model(data, task_index)
             train_loss += F.cross_entropy(output, target).item()
             pred = output.argmax(dim=1, keepdim=True)
@@ -148,8 +152,6 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0):
 
         y = model(x, task_index)
         loss = loss_func(y,t2)
-        print(y,t2)
-        print(y.size(), t2.size())
         loss.backward()
         grad_norm = get_grad_norm(model)
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
@@ -520,7 +522,7 @@ if __name__=='__main__':
     parser.add_argument('--withoutShortcut', action='store_true', default=False)
     parser.add_argument('--withoutBN', action='store_true', default=False)
     parser.add_argument('--class_scaling', action='store_true', default=False)
-    parser.add_argument('--finetuning', action='store_true', default=False)
+    parser.add_argument('--use_cifar_model', action='store_true', default=False)
 
     parser.add_argument('--config', default=None,
                         help='config file path')
@@ -592,6 +594,7 @@ if __name__=='__main__':
     model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
 
     for task_num in range(2):
+        print('start task=',task_num)
         # Head_Init_Iters
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
@@ -628,15 +631,15 @@ if __name__=='__main__':
             if args.warmup_epochs>0:
                 scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
 
-    if args.log_h_delta:
-        for i, data in enumerate(dataset.val_loader[0], 0):
-            inputs, labels = data
-            inputs_for_dh = inputs.to(device)
-            break
-        init_pre_act_dict = fetch_h(model)
-    try:
-        main(epochs=args.epochs, iterations=-1, prefix=str(task_num)+'task_', task_index=task_num)
-    except ValueError as e:
-        print(e)
+        if args.log_h_delta:
+            for i, data in enumerate(dataset.val_loader[0], 0):
+                inputs, labels = data
+                inputs_for_dh = inputs.to(device)
+                break
+            init_pre_act_dict = fetch_h(model)
+        try:
+            main(epochs=args.epochs, iterations=-1, prefix=str(task_num)+'task_', task_index=task_num)
+        except ValueError as e:
+            print(e)
     
     wandb.finish()
