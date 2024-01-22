@@ -139,6 +139,8 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0):
 
         if args.loss_type=='cross_entropy':
             loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+            if task_index == 1:
+                t -= dataset.num_classes // 2
             t2= t
         elif args.loss_type=='mse':
             loss_func = torch.nn.MSELoss()
@@ -146,6 +148,8 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0):
 
         y = model(x, task_index)
         loss = loss_func(y,t2)
+        print(y,t2)
+        print(y.size(), t2.size())
         loss.backward()
         grad_norm = get_grad_norm(model)
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:

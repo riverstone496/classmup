@@ -116,7 +116,7 @@ class CIFAR10(Dataset):
         self.num_classes = 10
         self.num_channels = 3
         self.img_size = 32
-        self.task_classes = [list(range(50)),list(range(50,100))]
+        self.task_classes = [list(range(5)),list(range(5,10))]
         self.create_transform(args)
 
         if args.cutout:
@@ -136,7 +136,6 @@ class CIFAR10(Dataset):
                                             train=False,
                                             download=True,
                                             transform=self.val_transform)
-        
 
         # Data Loader (Input Pipeline)
         self.train_loader = []

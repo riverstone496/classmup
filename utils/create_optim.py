@@ -27,9 +27,10 @@ def create_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
 def create_optimizer_for_head(args, model, lr, input_lr_const=1):
     param_groups = []
     for name, param in model.named_parameters():
-        if 'output' in name or 'head' in name or 'fc'  in name:
-            print(name, 'in head optimizer')
-            param_groups.append({'params': param, 'lr': lr})
+        if 'block' not in name:
+            if 'output' in name or 'head' in name or 'fc'  in name:
+                print(name, 'in head optimizer')
+                param_groups.append({'params': param, 'lr': lr})
 
     # オプティマイザの選択と初期化
     if args.optim == 'sgd':
