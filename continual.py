@@ -39,10 +39,9 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
         train(epoch, prefix, iterations, task_index=task_index)
         total_train_time += time.time() - start
         if (epoch-1)%args.log_val_interval==0:
-            trainloss_all(epoch, prefix, task_index=0)
-            trainloss_all(epoch, prefix, task_index=1)
-            nantf = val(epoch, prefix, task_index=0)
-            nantf = val(epoch, prefix, task_index=1)
+            for i in range(task_index+1):
+                trainloss_all(epoch, prefix, task_index=task_index)
+                nantf = val(epoch, prefix, task_index=task_index)
             if args.log_h_delta:
                 log_h_delta(epoch, prefix)
             if nantf:
@@ -233,11 +232,14 @@ def register_fhook(model: torch.nn.Module):
 def fetch_h(model):
     model = register_fhook(model)
     y = model(inputs_for_dh, 0)
+    y = model(inputs_for_dh, 1)
     pre_act_dict = {}
     for name, module in model.named_modules():
         if len(list(module.children())) > 0:
               continue
         if all(not p.requires_grad for p in module.parameters()):
+            continue
+        if not hasattr(module, 'out_data'):
             continue
         pre_act_dict[name] = module.out_data
     return pre_act_dict
@@ -249,7 +251,6 @@ def log_h_delta(epoch, prefix = ''):
     for mname in pre_act_dict.keys():
         h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
         dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
-    print(dh_norm_dict)
     if args.wandb:
         log = {prefix + 'epoch': epoch,
                prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
@@ -444,7 +445,9 @@ if __name__=='__main__':
     parser.add_argument('--CIFAR10Policy', action='store_true', default=False)
     parser.add_argument('--dataset_shuffle', action='store_true', default=False)
 
-    parser.add_argument('--lr', type=float, default=1e-1,
+    parser.add_argument('--lr1', type=float, default=1e-1,
+                        help='learning rate')
+    parser.add_argument('--lr2', type=float, default=1e-1,
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0,
                         help='learning rate')
@@ -555,6 +558,7 @@ if __name__=='__main__':
 
     device = torch.device('cuda')
     
+    print('Start creating Dataset')
     if args.dataset == 'MNIST':
         dataset = utils.continual_dataset.MNIST(args=args)
     elif args.dataset == 'FashionMNIST':
@@ -571,6 +575,7 @@ if __name__=='__main__':
         dataset = utils.continual_dataset.Flowers(args=args)
     elif args.dataset == 'Cars':
         dataset = utils.continual_dataset.Cars(args=args)
+    print('Finished creating Dataset')
 
     if args.class_scaling:
         if args.model == 'mlp':
@@ -591,10 +596,16 @@ if __name__=='__main__':
 
     if args.pseudo_batch_size != -1:
         args.batch_size=args.pseudo_batch_size
+    print('Start Model Preparing')
     model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
 
     for task_num in range(2):
         print('start task=',task_num)
+        if task_num==0:
+            learning_rate = args.lr1
+        elif task_num==1:
+            learning_rate = args.lr2
+            args.scheduler = 'Constant'
         # Head_Init_Iters
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
@@ -613,7 +624,7 @@ if __name__=='__main__':
 
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
-        optimizer = create_optimizer(args, model, lr = args.lr)
+        optimizer = create_optimizer(args, model, lr = learning_rate)
         scheduler=None
         if args.head_init_epochs == -1:
             if args.head_init_iterations != -1:

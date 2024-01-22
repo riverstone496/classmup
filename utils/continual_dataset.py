@@ -11,7 +11,7 @@ from .autoaugment import CIFAR10Policy
 
 class Dataset(object):
     def __init__(self, args):
-        self.num_steps_per_epoch = len(self.train_loader) // 2
+        self.num_steps_per_epoch = len(self.train_loader[0]) // 2
 
     def create_transform(self,args):
         self.train_transform = transforms.Compose([])
@@ -40,6 +40,17 @@ class Dataset(object):
         self.val_transform.transforms.append(transforms.ToTensor())
         self.val_transform.transforms.append(normalize)
 
+class TaskSubset(Dataset):
+    def __init__(self, dataset, classes):
+        self.dataset = dataset
+        self.indices = [i for i, (_, label) in enumerate(dataset) if label in classes]
+
+    def __getitem__(self, idx):
+        return self.dataset[self.indices[idx]]
+
+    def __len__(self):
+        return len(self.indices)
+    
 class MNIST(Dataset):
     def __init__(self, args):
         self.num_classes = 10
@@ -117,7 +128,9 @@ class CIFAR10(Dataset):
         self.num_channels = 3
         self.img_size = 32
         self.task_classes = [list(range(5)),list(range(5,10))]
+        print('Start create transform')
         self.create_transform(args)
+        print('Finish create transform')
 
         if args.cutout:
             if args.length is None:
@@ -137,21 +150,20 @@ class CIFAR10(Dataset):
                                             download=True,
                                             transform=self.val_transform)
 
-        # Data Loader (Input Pipeline)
+        # サブセットの生成を改善
         self.train_loader = []
         self.train_val_loader = []
         self.val_loader = []
 
         for classes in self.task_classes:
-            task_trainset = [data for data in self.train_dataset_all if data[1] in classes]
-            task_train_val_set = [data for data in self.train_val_dataset_all if data[1] in classes]
-            task_valset = [data for data in self.val_dataset_all if data[1] in classes]
+            task_trainset = TaskSubset(self.train_dataset_all, classes)
+            task_train_val_set = TaskSubset(self.train_val_dataset_all, classes)
+            task_valset = TaskSubset(self.val_dataset_all, classes)
             if args.train_size != -1:
-                indices = list(range(len(task_trainset)))
-                np.random.shuffle(indices)
-                train_idx = indices[:args.train_size]
-                task_trainset = Subset(task_trainset, train_idx)
-                task_train_val_set= Subset(task_train_val_set, train_idx)
+                indices = torch.randperm(len(task_trainset))[:args.train_size]
+                task_trainset = Subset(task_trainset, indices)
+                task_train_val_set = Subset(task_train_val_set, indices)
+
                 
             self.train_loader.append( torch.utils.data.DataLoader(dataset=task_trainset,
                                                         batch_size=args.batch_size,
