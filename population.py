@@ -62,7 +62,6 @@ def val(epoch, prefix = ''):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
-            orthogonal_matrix = orthogonal_matrix.to(device)
             target2 = orthogonal_matrix[target]
             output = model(data)
             test_loss += loss_func(output, target2).item()
@@ -101,7 +100,6 @@ def trainloss_all(epoch, prefix = ''):
     with torch.no_grad():
         for data, target in dataset.train_val_loader:
             data, target = data.to(device), target.to(device)
-            orthogonal_matrix = orthogonal_matrix.to(device)
             target2 = orthogonal_matrix[target]
             output = model(data)
             train_loss += loss_func(output, target2).item()
