@@ -565,8 +565,7 @@ if __name__=='__main__':
         dataset = utils.dataset.Cars(args=args)
 
     if args.class_scaling:
-        if args.model == 'mlp':
-            dataset.num_classes = args.width
+        dataset.num_classes *= int(args.width / args.base_width)
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size

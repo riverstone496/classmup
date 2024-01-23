@@ -171,13 +171,13 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0):
                 min_train_loss=loss
             log = {prefix+'epoch': epoch,
                    prefix+'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
-                   prefix+'task'+str(task_index) +'train_loss': float(loss),
-                   prefix+'task'+str(task_index) +'train_accuracy': float(acc),
-                   prefix+'task'+str(task_index) +'max_train_acc':max_train_acc,
-                   prefix+'task'+str(task_index) +'min_train_loss':min_train_loss,
-                   prefix+'task'+str(task_index) +'l1_norm':l1_norm,
-                   prefix+'task'+str(task_index) +'l2_norm':l2_norm,
-                   prefix+'task'+str(task_index) +'grad_norm_all':grad_norm
+                   prefix+'task'+str(task_index) +'_train_loss': float(loss),
+                   prefix+'task'+str(task_index) +'_train_accuracy': float(acc),
+                   prefix+'task'+str(task_index) +'_max_train_acc':max_train_acc,
+                   prefix+'task'+str(task_index) +'_min_train_loss':min_train_loss,
+                   prefix+'task'+str(task_index) +'_l1_norm':l1_norm,
+                   prefix+'task'+str(task_index) +'_l2_norm':l2_norm,
+                   prefix+'task'+str(task_index) +'_grad_norm_all':grad_norm
                    }
             wandb.log(log)
 
