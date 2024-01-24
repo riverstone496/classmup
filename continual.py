@@ -17,7 +17,7 @@ from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
-from utils.loss_type import CustomCrossEntropyLossWithL2Reg, CustomMSELossWithL2Reg
+from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head
 import warmup_scheduler
 

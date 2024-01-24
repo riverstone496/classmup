@@ -17,7 +17,7 @@ from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
-from utils.loss_type import CustomCrossEntropyLossWithL2Reg, CustomMSELossWithL2Reg
+from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head
 import warmup_scheduler
 
@@ -570,7 +570,12 @@ if __name__=='__main__':
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size
     else:
         args.accumulate_iters=1
-        
+    
+    random_matrix = torch.randn(dataset.num_classes, dataset.num_classes)
+    orthogonal_matrix, _ = torch.qr(random_matrix)
+    orthogonal_matrix *= (dataset.num_classes)**0.5
+    orthogonal_matrix = orthogonal_matrix.to(device)
+    
     muP_set(args)
 
     if args.head_init_epochs == -1:
@@ -622,11 +627,6 @@ if __name__=='__main__':
         scheduler = PolynomialLR(optimizer, total_iters=args.epochs, power=args.sched_power)
         if args.warmup_epochs>0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
-
-    random_matrix = torch.randn(dataset.num_classes, dataset.num_classes)
-    orthogonal_matrix, _ = torch.qr(random_matrix)
-    orthogonal_matrix *= (dataset.num_classes)**0.5
-    orthogonal_matrix = orthogonal_matrix.to(device)
 
     if args.log_h_delta:
         for i, data in enumerate(dataset.val_loader, 0):

@@ -17,7 +17,7 @@ from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
-from utils.loss_type import CustomCrossEntropyLossWithL2Reg, CustomMSELossWithL2Reg
+from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head
 import warmup_scheduler
 
@@ -137,7 +137,7 @@ def train(epoch, prefix = '', train_iterations=-1):
 
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0:
-                loss_func = CustomCrossEntropyLossWithL2Reg(epsilon = args.noise_eps, label_smoothing=args.label_smoothing)
+                loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing)
                 t2 = t
             else:
                 loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
@@ -592,6 +592,8 @@ if __name__=='__main__':
     else:
         model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
+
+    print(model)
 
     # Head_Init_Iters
     if args.log_weight_delta:
