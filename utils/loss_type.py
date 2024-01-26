@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 class CustomCrossEntropyLoss(nn.Module):
     def __init__(self, epsilon=0, reduction='mean', accumulate_iters=1, label_smoothing=0):
@@ -28,9 +29,11 @@ class CustomCrossEntropyLoss(nn.Module):
         # Calculate the cross entropy loss manually
         log_softmax = F.log_softmax(input, dim=1)
         if self.reduction == 'mean':
-            ce_loss = -torch.mean(log_softmax * smoothed_target) / input.size(0)
+            ce_loss = -torch.mean(log_softmax * smoothed_target)
         if self.reduction == 'sum':
             ce_loss = -torch.sum(log_softmax * smoothed_target) / input.size(0)
+        if self.reduction == 'log':
+            ce_loss = -torch.sum(log_softmax * smoothed_target) / input.size(0) / np.log(input.size(1))
 
         return ce_loss / self.accumulate_iters
 

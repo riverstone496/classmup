@@ -136,8 +136,8 @@ def train(epoch, prefix = '', train_iterations=-1):
         x, t = x.to(device), t.to(device)
 
         if args.loss_type == 'cross_entropy':
-            if args.noise_eps>0:
-                loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing)
+            if args.noise_eps>0 or args.class_reduction:
+                loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
                 t2 = t
             else:
                 loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
@@ -520,6 +520,8 @@ if __name__=='__main__':
     parser.add_argument('--class_scaling', action='store_true', default=False)
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
+    parser.add_argument('--class_reduction', action='store_true', default=False)
+    parser.add_argument('--class_reduction_type', type=str, default='mean')
 
     parser.add_argument('--config', default=None,
                         help='config file path')
