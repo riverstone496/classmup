@@ -150,9 +150,21 @@ def train(epoch, prefix = '', train_iterations=-1):
         loss = loss_func(y,t2)
         loss.backward()
         grad_norm = get_grad_norm(model)
+
+        if args.chi_fixed:
+            t3 = t2
+            if t2.ndim == 1:
+                t3 = F.one_hot(t3, num_classes=y.size(1)).float()
+            chi_norm = torch.abs(y-t3).mean(dtype=torch.float32).item()
+            current_lr = optimizer.param_groups[0]['lr']  # 現在の学習率を取得
+            adjust_learning_rate(optimizer, current_lr/chi_norm)  # 学習率を更新
+        
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
+        
+        if args.chi_fixed:
+            adjust_learning_rate(optimizer, current_lr)  # 学習率を更新
         
         if batch_idx%100==0 and args.wandb:
             pred = y.data.max(1)[1]
@@ -175,10 +187,18 @@ def train(epoch, prefix = '', train_iterations=-1):
                    prefix + 'l2_norm':l2_norm,
                    prefix + 'grad_norm_all':grad_norm
                    }
+            if args.chi_fixed:
+                log[prefix + 'chi_norm'] = chi_norm
+                log[prefix + 'chi_norm_inv'] = 1/chi_norm
             wandb.log(log)
 
     if scheduler is not None:
         scheduler.step(epoch=epoch)
+
+# 学習率を調整する関数
+def adjust_learning_rate(optimizer, lr):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 def get_weight_norm(model):
     l1_norm = sum(p.abs().sum() for p in model.parameters())
@@ -522,6 +542,8 @@ if __name__=='__main__':
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
+
+    parser.add_argument('--chi_fixed', action='store_true', default=False)
 
     parser.add_argument('--config', default=None,
                         help='config file path')
