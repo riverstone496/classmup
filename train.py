@@ -143,7 +143,10 @@ def train(epoch, prefix = '', train_iterations=-1):
                 loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
                 t2 = t
         elif args.loss_type=='mse':
-            loss_func = torch.nn.MSELoss()
+            if args.noise_eps>0 or args.class_reduction:
+                loss_func = CustomMSELossWithL2Reg(model=model, lambda_reg=0, reduction=args.class_reduction_type)
+            else:
+                loss_func = torch.nn.MSELoss()
             t2 = MSE_label(x, t)
 
         y = model(x)
@@ -151,11 +154,15 @@ def train(epoch, prefix = '', train_iterations=-1):
         loss.backward()
         grad_norm = get_grad_norm(model)
 
-        if args.chi_fixed:
+        if args.loss_type == 'cross_entropy':
             t3 = t2
             if t2.ndim == 1:
                 t3 = F.one_hot(t3, num_classes=y.size(1)).float()
-            chi_norm = torch.abs(y-t3).mean(dtype=torch.float32).item()
+            chi_norm = torch.abs(F.log_softmax(y, dim=1)-t3).mean(dtype=torch.float32).item()
+        elif args.loss_type=='mse':
+            chi_norm = torch.abs(y-t2).mean(dtype=torch.float32).item()
+
+        if args.chi_fixed:
             current_lr = optimizer.param_groups[0]['lr']  # 現在の学習率を取得
             adjust_learning_rate(optimizer, current_lr/chi_norm)  # 学習率を更新
         
@@ -185,11 +192,10 @@ def train(epoch, prefix = '', train_iterations=-1):
                    prefix + 'min_train_loss':min_train_loss,
                    prefix + 'l1_norm':l1_norm,
                    prefix + 'l2_norm':l2_norm,
-                   prefix + 'grad_norm_all':grad_norm
+                   prefix + 'grad_norm_all':grad_norm,
+                   prefix + 'chi_norm':chi_norm,
+                   prefix + 'chi_norm_inv':1/chi_norm,
                    }
-            if args.chi_fixed:
-                log[prefix + 'chi_norm'] = chi_norm
-                log[prefix + 'chi_norm_inv'] = 1/chi_norm
             wandb.log(log)
 
     if scheduler is not None:
@@ -231,7 +237,8 @@ def register_fhook(model: torch.nn.Module):
 def MSE_label(output, target):
     y_onehot = output.new_zeros(output.size(0), dataset.num_classes)
     y_onehot.scatter_(1, target.unsqueeze(-1), 1)
-    y_onehot -= 1/dataset.num_classes
+    if not args.spaese_coding_mse:
+        y_onehot -= 1/dataset.num_classes
     return y_onehot
 
 def register_fhook(model: torch.nn.Module):
@@ -544,6 +551,7 @@ if __name__=='__main__':
     parser.add_argument('--class_reduction_type', type=str, default='mean')
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
+    parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
 
     parser.add_argument('--config', default=None,
                         help='config file path')

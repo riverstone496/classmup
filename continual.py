@@ -85,6 +85,8 @@ def val(epoch, prefix = '', task_index = 0):
                prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc,
                prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss}
         wandb.log(log)
+    if args.epochs == epoch and task_index == 0:
+        wandb.run.summary['task0_val_accuracy_final'] = max_validation_acc
     print('Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         test_loss, correct, len(dataset.val_loader[task_index].dataset), test_accuracy))
 
