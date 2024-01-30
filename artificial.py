@@ -498,8 +498,6 @@ if __name__=='__main__':
 
     parser.add_argument('--withoutShortcut', action='store_true', default=False)
     parser.add_argument('--withoutBN', action='store_true', default=False)
-    parser.add_argument('--class_scaling', action='store_true', default=False)
-    parser.add_argument('--real_class_scaling', action='store_true', default=False)
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
