@@ -20,6 +20,7 @@ from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
 from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head
 import warmup_scheduler
+import random
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -63,7 +64,10 @@ def val(epoch, prefix = ''):
             data, target = data.to(device), target.to(device)
             output = model(data)
             test_loss += F.cross_entropy(output, target, reduction='sum').item()
-            pred = output.argmax(dim=1, keepdim=True)
+            if args.class_bulk:
+                pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
+            else:
+                pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
 
     test_loss /= len(dataset.val_loader.dataset)
@@ -99,7 +103,10 @@ def trainloss_all(epoch, prefix = ''):
             data, target = data.to(device), target.to(device)
             output = model(data)
             train_loss += F.cross_entropy(output, target).item()
-            pred = output.argmax(dim=1, keepdim=True)
+            if args.class_bulk:
+                pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
+            else:
+                pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
 
     train_loss /= len(dataset.train_val_loader.dataset)
@@ -135,6 +142,13 @@ def train(epoch, prefix = '', train_iterations=-1):
         model.train()
         x, t = x.to(device), t.to(device)
 
+        if args.class_bulk:
+            t_random_adjusted = t.clone()
+            for idx in range(len(t)):
+                i = random.randint(0, int(args.width / args.base_width) - 1)
+                t_random_adjusted[idx] += dataset_original_class * i
+            t = t_random_adjusted
+        
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
                 loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
@@ -174,7 +188,10 @@ def train(epoch, prefix = '', train_iterations=-1):
             adjust_learning_rate(optimizer, current_lr)  # 学習率を更新
         
         if batch_idx%100==0 and args.wandb:
-            pred = y.data.max(1)[1]
+            if args.class_bulk:
+                pred = y.data.max(1)[1] % dataset_original_class 
+            else:
+                pred = y.data.max(1)[1]
             acc = 100. * pred.eq(t.data).cpu().sum() / t.size(0)
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
@@ -545,6 +562,8 @@ if __name__=='__main__':
     parser.add_argument('--withoutShortcut', action='store_true', default=False)
     parser.add_argument('--withoutBN', action='store_true', default=False)
     parser.add_argument('--class_scaling', action='store_true', default=False)
+    parser.add_argument('--real_class_scaling', action='store_true', default=False)
+    parser.add_argument('--class_bulk', action='store_true', default=False)
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
@@ -584,6 +603,12 @@ if __name__=='__main__':
 
     device = torch.device('cuda')
     
+    if args.real_class_scaling:
+        if args.dataset == 'CIFAR100':
+            num_classes = int(6 * args.width / args.base_width)
+    else:
+        num_classes = -1
+
     if args.dataset == 'MNIST':
         dataset = utils.dataset.MNIST(args=args)
     elif args.dataset == 'FashionMNIST':
@@ -591,7 +616,7 @@ if __name__=='__main__':
     elif args.dataset == 'CIFAR10':
         dataset = utils.dataset.CIFAR10(args=args)
     elif args.dataset == 'CIFAR100':
-        dataset = utils.dataset.CIFAR100(args=args)
+        dataset = utils.dataset.CIFAR100(args=args, num_classes=num_classes)
     elif args.dataset == 'STL10':
         dataset = utils.dataset.STL(args=args)
     elif args.dataset == 'SVHN':
@@ -601,6 +626,7 @@ if __name__=='__main__':
     elif args.dataset == 'Cars':
         dataset = utils.dataset.Cars(args=args)
 
+    dataset_original_class = dataset.num_classes
     if args.class_scaling:
         dataset.num_classes *= int(args.width / args.base_width)
 

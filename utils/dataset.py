@@ -56,6 +56,13 @@ class Dataset(object):
 
         self.val_transform.transforms.append(transforms.ToTensor())
         self.val_transform.transforms.append(normalize)
+    
+    def _filter_dataset(self, dataset, num_classes):
+        if num_classes == dataset.classes:
+            return dataset
+        class_indices = list(range(num_classes))
+        indices = [i for i in range(len(dataset)) if dataset.targets[i] in class_indices]
+        return Subset(dataset, indices)
 
 class MNIST(Dataset):
     def __init__(self, args):
@@ -164,8 +171,9 @@ class CIFAR10(Dataset):
         super().__init__(args)
 
 class CIFAR100(Dataset):
-    def __init__(self, args):
-        self.num_classes = 100
+    def __init__(self, args, num_classes = 100):
+        if num_classes != -1:
+            self.num_classes = num_classes
         self.img_size = 32
         self.num_channels = 3
         self.create_transform(args)
@@ -187,8 +195,20 @@ class CIFAR100(Dataset):
                                             train=False,
                                             transform=self.val_transform,
                                             download=True)
-        super().__init__(args)
+        
+        if num_classes!=100:
+            self.train_dataset = self._filter_dataset(self.train_dataset, num_classes=num_classes)
+            self.train_val_dataset = self._filter_dataset(self.train_val_dataset, num_classes=num_classes)
+            self.val_dataset = self._filter_dataset(self.val_dataset, num_classes=num_classes)
 
+        if args.train_size != -1:
+            indices = list(range(len(self.train_dataset)))
+            np.random.shuffle(indices)
+            train_idx = indices[:args.train_size]
+            self.train_dataset = Subset(self.train_dataset, train_idx)
+
+        super().__init__(args)
+    
 class STL(Dataset):
     def __init__(self, args):
         self.num_classes = 10
