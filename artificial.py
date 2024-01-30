@@ -39,11 +39,49 @@ def main(epochs,  prefix = ''):
         start = time.time()
         train(epoch, prefix)
         total_train_time += time.time() - start
+        trainloss_all(epoch, prefix)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     if args.wandb:
         wandb.run.summary['total_train_time'] = total_train_time
         wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
+
+def trainloss_all(epoch, prefix = ''):
+    global max_train_acc_all,min_train_loss_all
+    model.eval()
+    train_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            train_loss += F.cross_entropy(output, target).item()
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
+
+    train_loss /= len(train_loader.dataset)
+    train_accuracy = 100. * correct / len(train_loader.dataset)
+    
+    if train_accuracy>max_train_acc_all:
+        max_train_acc_all=train_accuracy
+    if train_loss<min_train_loss_all:
+        min_train_loss_all=train_loss
+
+    if args.wandb:
+        log = {prefix + 'epoch': epoch,
+               prefix + 'iteration': (epoch) * len(train_loader.dataset),
+               prefix + 'train_loss_all': train_loss,
+               prefix + 'train_accuracy_all': train_accuracy,
+               prefix + 'max_train_acc_all':max_train_acc_all,
+               prefix + 'min_train_loss_all':min_train_loss_all}
+        wandb.log(log)
+    print('Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        train_loss, correct, len(train_loader.dataset), train_accuracy))
+
+    if math.isnan(train_loss):
+        print('Error: Train loss is nan', file=sys.stderr)
+        return True
+    return False
 
 def train(epoch, prefix = ''):
     global max_train_acc,min_train_loss
@@ -101,7 +139,7 @@ def train(epoch, prefix = ''):
             if loss<min_train_loss:
                 min_train_loss=loss
             log = {prefix + 'epoch': epoch,
-                   prefix + 'iteration': (epoch-1) * len(train_loader.dataset),
+                   prefix + 'iteration': batch_idx + (epoch-1) * len(train_loader.dataset),
                    prefix + 'train_loss': float(loss),
                    prefix + 'train_accuracy': float(acc),
                    prefix + 'max_train_acc':max_train_acc,
