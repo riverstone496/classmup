@@ -151,8 +151,8 @@ class MultiHeadModel(nn.Module):
 
     def forward(self, x, task):
         x = self.base_model(x)
-        if task == 1:
+        if task == 0:
             x = self.head1(x)
-        elif task == 2:
+        elif task == 1:
             x = self.head2(x)
         return x
