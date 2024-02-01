@@ -40,6 +40,8 @@ def main(epochs,  prefix = ''):
         train(epoch, prefix)
         total_train_time += time.time() - start
         trainloss_all(epoch, prefix)
+        if args.log_h_delta:
+            log_h_delta(epoch, prefix)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     if args.wandb:
@@ -230,7 +232,7 @@ def log_h_delta(epoch, prefix = ''):
     print(dh_norm_dict)
     if args.wandb:
         log = {prefix + 'epoch': epoch,
-               prefix + 'iteration': epoch * len(dataset.train_loader.dataset),
+               prefix + 'iteration': epoch * len(train_loader.dataset),
                prefix + 'h/':h_norm_dict,
                prefix + 'dh/': dh_norm_dict,}
         wandb.log(log)
