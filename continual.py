@@ -530,6 +530,9 @@ if __name__=='__main__':
     parser.add_argument('--class_scaling', action='store_true', default=False)
     parser.add_argument('--use_cifar_model', action='store_true', default=False)
 
+    parser.add_argument('--use_fractal_model', action='store_true', default=False)
+    parser.add_argument('--pretrained_path', type=str, default='./pretrained/exfractal_21k_tiny.pth.tar')
+
     parser.add_argument('--config', default=None,
                         help='config file path')
 

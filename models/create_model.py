@@ -9,6 +9,7 @@ import torch.nn as nn
 import numpy as np
 from .wideresnet import WideResNet
 import timm
+from .fractal import create_fractal_model
 
 def calculate_fan_in_fan_out(module):
     parameters = list(module.parameters())
@@ -133,6 +134,8 @@ class MultiHeadModel(nn.Module):
         super(MultiHeadModel, self).__init__()
         if args.use_cifar_model:
             self.base_model = create_model(32, num_classes, 3, args)
+        elif args.use_fractal_model:
+            self.base_model = create_fractal_model(model_name = args.model, pretrained=True, pretrained_path=args.pretrained_path)
         else:
             self.base_model = timm.create_model(model_name = args.model, pretrained=True)
         if hasattr(self.base_model, 'head'):

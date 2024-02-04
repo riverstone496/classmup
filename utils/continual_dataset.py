@@ -19,7 +19,7 @@ class Dataset(object):
         normalize = transforms.Normalize(   mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
                                             std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
         
-        if args.use_timm or 'vit_' in args.model or 'mixer_' in args.model or 'efficient' in args.model or 'gmlp' in args.model or 'dense' in args.model or 'inception' in args.model or 'convnext' in args.model:
+        if args.use_timm or 'vit_' in args.model or 'deit_' in args.model or 'mixer_' in args.model or 'efficient' in args.model or 'gmlp' in args.model or 'dense' in args.model or 'inception' in args.model or 'convnext' in args.model:
             self.train_transform.transforms.append(transforms.RandomResizedCrop(224))
             self.val_transform.transforms.append(transforms.Resize(256))
             self.val_transform.transforms.append(transforms.CenterCrop(224))
