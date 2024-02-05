@@ -47,6 +47,9 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
                 log_h_delta(epoch, prefix)
             if nantf:
                 break
+            if args.train_acc_stop is not None and max_train_acc_all > args.train_acc_stop:
+                wandb.run.summary['total_epochs'] = epoch
+                break
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
@@ -425,6 +428,8 @@ if __name__=='__main__':
                         help='input batch size for training (default: 128)')
     parser.add_argument('--epochs', type=int, default=20,
                         help='number of epochs to train (default: 20)')
+    parser.add_argument('--train_acc_stop', type=float, default=None,
+                        help='train_acc_stop (default: 20)')
     parser.add_argument('--head_init_epochs', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
     parser.add_argument('--head_init_iterations', type=int, default=-1,
