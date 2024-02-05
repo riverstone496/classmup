@@ -9,7 +9,7 @@ def create_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
     for name, param in model.named_parameters():
         # レイヤー名に応じて学習率を調整
         layer_lr = lr
-        if 'input' in name:
+        if 'input' in name or 'patch_embed' in name:
             layer_lr *= input_lr_const * (args.base_width / args.width) ** args.c_input
         elif 'output' in name or 'head' in name:
             layer_lr *= output_lr_const * (args.base_width / args.width) ** args.c_output
@@ -56,7 +56,7 @@ def calculate_fan_in_fan_out(name, param):
         #raise NotImplementedError("This function only supports conv2d and linear layers")
     return fan_in, fan_out
 
-def create_spectral_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
+def create_spectral_optimizer(args, model, lr):
     # レイヤーごとにパラメータを設定
     param_groups = []
     for name, param in model.named_parameters():
@@ -64,7 +64,7 @@ def create_spectral_optimizer(args, model, lr, input_lr_const=1, output_lr_const
         layer_lr = lr
         if param.requires_grad:
             if 'weight' in name and 'norm' not in name:
-                fan_in, fan_out = calculate_fan_in_fan_out(param)
+                fan_in, fan_out = calculate_fan_in_fan_out(name, param)
                 layer_lr *= (fan_in / fan_out)
         param_groups.append({'params': param, 'lr': layer_lr})
     # オプティマイザの選択と初期化

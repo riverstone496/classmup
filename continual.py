@@ -18,7 +18,7 @@ import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
 from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
-from utils.create_optim import create_optimizer, create_optimizer_for_head
+from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
@@ -29,27 +29,30 @@ max_train_acc=0
 min_train_loss=np.inf
 max_train_acc_all=0
 min_train_loss_all=np.inf
-
+prev_epochs = {'init_':0, '':0}
 os.environ["WANDB_HOST"] = os.environ.get('SLURM_JOBID')
 
 def main(epochs, iterations = -1, prefix = '', task_index = 0):
+    global task0_epoch
     total_train_time=0
+    epoch = 0
     for epoch in range(1, epochs + 1):
-        epoch += task_index * epochs
+        epoch += task_index * prev_epochs[prefix]
         start = time.time()
         train(epoch, prefix, iterations, task_index=task_index)
         total_train_time += time.time() - start
         if (epoch-1)%args.log_val_interval==0:
             for i in range(task_index+1):
-                trainloss_all(epoch, prefix, task_index=i)
-                nantf = val(epoch, prefix, task_index=i)
+                trainloss_all(epoch, prefix, task_index=i, phase=task_index)
+                nantf = val(epoch, prefix, task_index=i, phase=task_index)
             if args.log_h_delta:
                 log_h_delta(epoch, prefix)
             if nantf:
                 break
             if args.train_acc_stop is not None and max_train_acc_all > args.train_acc_stop:
-                wandb.run.summary['total_epochs'] = epoch
+                wandb.run.summary['total_epochs_task'+str(task_index)] = epoch
                 break
+    prev_epochs[prefix] += epoch
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
@@ -58,7 +61,7 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
         wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
         wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
 
-def val(epoch, prefix = '', task_index = 0):
+def val(epoch, prefix = '', task_index = 0, phase = 0):
     global max_validation_acc,min_validation_loss
     model.eval()
     test_loss = 0
@@ -85,6 +88,8 @@ def val(epoch, prefix = '', task_index = 0):
                prefix+'iteration': epoch * dataset.num_steps_per_epoch,
                prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
                prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy,
+               'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
+               'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy,
                prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc,
                prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss}
         wandb.log(log)
@@ -98,7 +103,7 @@ def val(epoch, prefix = '', task_index = 0):
         return True
     return False
 
-def trainloss_all(epoch, prefix = '', task_index = 0):
+def trainloss_all(epoch, prefix = '', task_index = 0, phase=0):
     global max_train_acc_all,min_train_loss_all
     model.eval()
     train_loss = 0
@@ -126,6 +131,8 @@ def trainloss_all(epoch, prefix = '', task_index = 0):
                prefix+'iteration': (epoch) * dataset.num_steps_per_epoch,
                prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
                prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy,
+               'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
+               'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy,
                prefix+'task' + str(task_index) +'_max_train_acc_all':max_train_acc_all,
                prefix+'task' + str(task_index) +'_min_train_loss_all':min_train_loss_all}
         wandb.log(log)
@@ -137,7 +144,7 @@ def trainloss_all(epoch, prefix = '', task_index = 0):
         return True
     return False
 
-def train(epoch, prefix = '', train_iterations=-1, task_index = 0):
+def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
     global max_train_acc,min_train_loss
     optimizer.zero_grad(set_to_none=True)
     for batch_idx, (x, t) in enumerate(dataset.train_loader[task_index]):
@@ -272,6 +279,15 @@ class ParseAction(argparse.Action):
 
 def muP_set(args):
     if args.parametrization == 'SP':
+        args.output_nonzero = True
+        args.b_output=1/2
+        args.b_input=1/2
+        args.b_hidden=1/2
+        args.c_output=0
+        args.c_input=0
+        args.c_hidden=0
+    if args.parametrization == 'SP_output_zero':
+        args.output_nonzero = False
         args.b_output=1/2
         args.b_input=1/2
         args.b_hidden=1/2
@@ -323,6 +339,7 @@ def muP_set(args):
             args.c_hidden=0
             args.c_input=0
     if args.parametrization == 'muP':
+        args.output_nonzero = True
         if args.optim == 'sgd':
             args.b_output=1
             args.b_hidden=1/2
@@ -382,6 +399,7 @@ def muP_set(args):
             args.c_hidden=-1
             args.c_input=-1
     if args.parametrization == 'class_muP':
+        args.output_nonzero = True
         if args.optim == 'sgd':
             args.b_output=1/2
             args.b_hidden=1/2
@@ -405,6 +423,26 @@ def muP_set(args):
         args.c_output=0
         args.c_hidden=0
         args.c_input=0
+    if args.parametrization == 'Spectral':
+        args.output_nonzero = True
+        args.b_output=1/2
+        args.b_hidden=1/2
+        args.b_input=1/2
+    if args.parametrization == 'Spectral_output_zero':
+        args.output_nonzero = False
+        args.b_output=1/2
+        args.b_hidden=1/2
+        args.b_input=1/2
+    if args.parametrization == 'Spectral_LR':
+        args.output_nonzero = True
+        args.b_output=1
+        args.b_hidden=1/2
+        args.b_input=1/2
+    if args.parametrization == 'Spectral_LR_output_zero':
+        args.output_nonzero = False
+        args.b_output=1
+        args.b_hidden=1/2
+        args.b_input=1/2
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -635,7 +673,10 @@ if __name__=='__main__':
 
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
-        optimizer = create_optimizer(args, model, lr = learning_rate)
+        if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
+            optimizer = create_spectral_optimizer(args, model, lr = learning_rate)
+        else:
+            optimizer = create_optimizer(args, model, lr = learning_rate)
         scheduler=None
         if args.head_init_epochs == -1:
             if args.head_init_iterations != -1:

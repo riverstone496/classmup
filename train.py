@@ -18,7 +18,7 @@ import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
 from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
-from utils.create_optim import create_optimizer, create_optimizer_for_head
+from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
 import random
 
@@ -438,6 +438,8 @@ def muP_set(args):
         args.c_output=0
         args.c_hidden=0
         args.c_input=0
+    if args.parametrization == 'Spectral_output_zero':
+        args.output_nonzero = False
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -671,7 +673,10 @@ if __name__=='__main__':
 
     if args.log_weight_delta:
         initial_params = [param.clone() for param in model.parameters()]
-    optimizer = create_optimizer(args, model, lr = args.lr)
+    if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
+        optimizer = create_spectral_optimizer(args, model, lr = args.lr)
+    else:
+        optimizer = create_optimizer(args, model, lr = args.lr)
     scheduler=None
     if args.head_init_epochs == -1:
         if args.head_init_iterations != -1:

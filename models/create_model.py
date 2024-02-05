@@ -148,6 +148,9 @@ class MultiHeadModel(nn.Module):
         if args.output_nonzero:
             nn.init.kaiming_normal_(self.head1.weight.data, a=1, mode='fan_in')
             nn.init.kaiming_normal_(self.head2.weight.data, a=1, mode='fan_in')
+            if args.b_output != 1/2:
+                self.head1.weight.data /= (self.base_model.num_features / (num_classes//2))**(args.b_output - 1/2)
+                self.head2.weight.data /= (self.base_model.num_features / (num_classes//2))**(args.b_output - 1/2)
         else:
             nn.init.zeros_(self.head1.weight.data)
             nn.init.zeros_(self.head2.weight.data)
