@@ -23,12 +23,12 @@ import warmup_scheduler
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
-max_validation_acc=0
-min_validation_loss=np.inf
-max_train_acc=0
-min_train_loss=np.inf
-max_train_acc_all=0
-min_train_loss_all=np.inf
+max_validation_acc={0:0, 1:0}
+min_validation_loss={0:np.inf, 1:np.inf}
+max_train_acc={0:0, 1:0}
+min_train_loss={0:np.inf, 1:np.inf}
+max_train_acc_all={0:0, 1:0}
+min_train_loss_all={0:np.inf, 1:np.inf}
 prev_epochs = {'init_':0, '':0}
 os.environ["WANDB_HOST"] = os.environ.get('SLURM_JOBID')
 
@@ -43,13 +43,13 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
         total_train_time += time.time() - start
         if (epoch-1)%args.log_val_interval==0:
             for i in range(task_index+1):
-                trainloss_all(epoch, prefix, task_index=i, phase=task_index)
+                train_accuracy=trainloss_all(epoch, prefix, task_index=i, phase=task_index)
                 nantf = val(epoch, prefix, task_index=i, phase=task_index)
             if args.log_h_delta:
                 log_h_delta(epoch, prefix)
             if nantf:
                 break
-            if args.train_acc_stop is not None and max_train_acc_all > args.train_acc_stop:
+            if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
                 wandb.run.summary['total_epochs_task'+str(task_index)] = epoch
                 break
     prev_epochs[prefix] += epoch
@@ -78,23 +78,25 @@ def val(epoch, prefix = '', task_index = 0, phase = 0):
 
     test_loss /= len(dataset.val_loader[task_index].dataset)
     test_accuracy = 100. * correct / len(dataset.val_loader[task_index].dataset)
-    if test_accuracy>max_validation_acc:
-        max_validation_acc=test_accuracy
-    if test_loss<min_validation_loss:
-        min_validation_loss=test_loss
+    if test_accuracy>max_validation_acc[task_index]:
+        max_validation_acc[task_index]=test_accuracy
+    if test_loss<min_validation_loss[task_index]:
+        min_validation_loss[task_index]=test_loss
 
     if args.wandb:
         log = {prefix+'epoch': epoch,
                prefix+'iteration': epoch * dataset.num_steps_per_epoch,
                prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
                prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy,
-               'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
-               'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy,
-               prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc,
-               prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss}
+               prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc[task_index],
+               prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss[task_index]}
         wandb.log(log)
-    if args.epochs == epoch and task_index == 0:
-        wandb.run.summary['task0_val_accuracy_final'] = max_validation_acc
+        log = {prefix+'epoch': epoch - prev_epochs[prefix],
+               'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
+               'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy}
+        wandb.log(log)
+    if task_index == 0:
+        wandb.run.summary['task0_val_accuracy_final'] = max_validation_acc[task_index]
     print('Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         test_loss, correct, len(dataset.val_loader[task_index].dataset), test_accuracy))
 
@@ -121,28 +123,30 @@ def trainloss_all(epoch, prefix = '', task_index = 0, phase=0):
     train_loss /= len(dataset.train_val_loader[task_index].dataset)
     train_accuracy = 100. * correct / len(dataset.train_val_loader[task_index].dataset)
     
-    if train_accuracy>max_train_acc_all:
-        max_train_acc_all=train_accuracy
-    if train_loss<min_train_loss_all:
-        min_train_loss_all=train_loss
+    if train_accuracy>max_train_acc_all[task_index]:
+        max_train_acc_all[task_index]=train_accuracy
+    if train_loss<min_train_loss_all[task_index]:
+        min_train_loss_all[task_index]=train_loss
 
     if args.wandb:
         log = {prefix+'epoch': epoch,
                prefix+'iteration': (epoch) * dataset.num_steps_per_epoch,
                prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
                prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy,
+               prefix+'task' + str(task_index) +'_max_train_acc_all':max_train_acc_all[task_index],
+               prefix+'task' + str(task_index) +'_min_train_loss_all':min_train_loss_all[task_index]}
+        wandb.log(log)
+        log = {prefix+'epoch': epoch - prev_epochs[prefix],
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
-               'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy,
-               prefix+'task' + str(task_index) +'_max_train_acc_all':max_train_acc_all,
-               prefix+'task' + str(task_index) +'_min_train_loss_all':min_train_loss_all}
+               'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy}
         wandb.log(log)
     print('Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         train_loss, correct, len(dataset.val_loader[task_index].dataset), train_accuracy))
 
     if math.isnan(train_loss):
         print('Error: Train loss is nan', file=sys.stderr)
-        return True
-    return False
+        return train_accuracy
+    return train_accuracy
 
 def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
     global max_train_acc,min_train_loss
@@ -177,16 +181,16 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
                 epoch, batch_idx * len(x), len(dataset.train_loader[task_index].dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
             l1_norm, l2_norm = get_weight_norm(model)
-            if acc>max_train_acc:
-                max_train_acc=acc
-            if loss<min_train_loss:
-                min_train_loss=loss
+            if acc>max_train_acc[task_index]:
+                max_train_acc[task_index]=acc
+            if loss<min_train_loss[task_index]:
+                min_train_loss[task_index]=loss
             log = {prefix+'epoch': epoch,
                    prefix+'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
                    prefix+'task'+str(task_index) +'_train_loss': float(loss),
                    prefix+'task'+str(task_index) +'_train_accuracy': float(acc),
-                   prefix+'task'+str(task_index) +'_max_train_acc':max_train_acc,
-                   prefix+'task'+str(task_index) +'_min_train_loss':min_train_loss,
+                   prefix+'task'+str(task_index) +'_max_train_acc':max_train_acc[task_index],
+                   prefix+'task'+str(task_index) +'_min_train_loss':min_train_loss[task_index],
                    prefix+'task'+str(task_index) +'_l1_norm':l1_norm,
                    prefix+'task'+str(task_index) +'_l2_norm':l2_norm,
                    prefix+'task'+str(task_index) +'_grad_norm_all':grad_norm
@@ -673,7 +677,7 @@ if __name__=='__main__':
 
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
-        if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
+        if 'Spectral' in args.parametrization:
             optimizer = create_spectral_optimizer(args, model, lr = learning_rate)
         else:
             optimizer = create_optimizer(args, model, lr = learning_rate)

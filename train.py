@@ -356,6 +356,7 @@ def muP_set(args):
             args.c_hidden=0
             args.c_input=0
     if args.parametrization == 'muP':
+        args.output_nonzero = True
         if args.optim == 'sgd':
             args.b_output=1
             args.b_hidden=1/2
