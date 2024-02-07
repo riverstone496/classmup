@@ -58,7 +58,12 @@ class CustomMSELossWithL2Reg(nn.Module):
         torch.Tensor: MSE損失
         """
         squared_diff = (predicted - target) ** 2  # 予測値と真のターゲットの差の二乗を計算
-        mse_loss = torch.mean(squared_diff)  # 二乗差の平均を計算
+        if self.reduction == 'sum':
+            # 出力次元の方向に合計し、サンプル数の方向に平均する
+            mse_loss = torch.sum(squared_diff, dim=1).mean()  # dim=1 は出力次元を指す
+        elif self.reduction == 'mean':
+            # 既定の動作: 二乗差の平均を計算
+            mse_loss = torch.mean(squared_diff)
         return mse_loss
 
     def forward(self, input, target):
