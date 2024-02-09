@@ -568,7 +568,7 @@ if __name__=='__main__':
     parser.add_argument('--loss_type', type=str, default='cross_entropy')
 
     parser.add_argument('--log_record', action='store_true', default=False)
-    parser.add_argument('--use_timm', action='store_true', default=False,
+    parser.add_argument('--use_timm', action='store_false', default=True,
                         help='enables CUDA training')
     parser.add_argument('--wandb', action='store_false', default=True)
 
