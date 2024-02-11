@@ -305,6 +305,15 @@ class ParseAction(argparse.Action):
 
 def muP_set(args):
     if args.parametrization == 'SP':
+        args.output_nonzero = True
+        args.b_output=1/2
+        args.b_input=1/2
+        args.b_hidden=1/2
+        args.c_output=0
+        args.c_input=0
+        args.c_hidden=0
+    if args.parametrization == 'SP_output_zero':
+        args.output_nonzero = False
         args.b_output=1/2
         args.b_input=1/2
         args.b_hidden=1/2
