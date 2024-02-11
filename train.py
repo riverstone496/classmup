@@ -283,18 +283,24 @@ def fetch_h(model):
     return pre_act_dict
 
 def log_h_delta(epoch, prefix = ''):
+    global tmp_pre_act_dict
     pre_act_dict = fetch_h(model)
     h_norm_dict = {}
     dh_norm_dict = {}
+    int_dh_norm_dict = {}
     for mname in pre_act_dict.keys():
         h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
         dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
-    print(dh_norm_dict)
+        int_dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - tmp_pre_act_dict[mname]).mean(dtype=torch.float32).item()
+    print(dh_norm_dict)        
+    log = {prefix + 'epoch': epoch,
+           prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
+           prefix + 'h/':h_norm_dict,
+           prefix + 'dh/': dh_norm_dict,}
+    if epoch % args.log_dh_interval == 0:
+        log[prefix + 'tmp_dh/'] = int_dh_norm_dict
+        tmp_pre_act_dict = fetch_h(model)
     if args.wandb:
-        log = {prefix + 'epoch': epoch,
-               prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
-               prefix + 'h/':h_norm_dict,
-               prefix + 'dh/': dh_norm_dict,}
         wandb.log(log)
 
 class ParseAction(argparse.Action):
@@ -548,6 +554,9 @@ if __name__=='__main__':
 
     parser.add_argument('--log_interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
+    parser.add_argument('--log_dh_interval', type=int, default=2,
+                        help='how many batches to wait before logging training status')
+    
     parser.add_argument('--log_val_interval', type=int, default=1,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--log_weight_delta', action='store_true', default=False,
@@ -710,6 +719,7 @@ if __name__=='__main__':
             inputs_for_dh = inputs.to(device)
             break
         init_pre_act_dict = fetch_h(model)
+        tmp_pre_act_dict  = fetch_h(model)
     try:
         main(epochs=args.epochs, iterations=-1, prefix='')
     except ValueError as e:
