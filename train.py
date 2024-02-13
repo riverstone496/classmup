@@ -168,12 +168,12 @@ def train(epoch, prefix = '', train_iterations=-1):
         loss.backward()
         grad_norm = get_grad_norm(model)
 
-        if args.loss_type == 'cross_entropy':
+        if args.loss_type == 'cross_entropy' and batch_idx%100==0:
             t3 = t2
             if t2.ndim == 1:
                 t3 = F.one_hot(t3, num_classes=y.size(1)).float()
             chi_norm = torch.abs(F.log_softmax(y, dim=1)-t3).mean(dtype=torch.float32).item()
-        elif args.loss_type=='mse':
+        elif args.loss_type=='mse' and batch_idx%100==0:
             chi_norm = torch.abs(y-t2).mean(dtype=torch.float32).item()
 
         if args.chi_fixed:
