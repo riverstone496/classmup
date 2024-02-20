@@ -292,7 +292,6 @@ def log_h_delta(epoch, prefix = ''):
         h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
         dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
         int_dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - tmp_pre_act_dict[mname]).mean(dtype=torch.float32).item()
-    print(dh_norm_dict)        
     log = {prefix + 'epoch': epoch,
            prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
            prefix + 'h/':h_norm_dict,
@@ -685,6 +684,7 @@ if __name__=='__main__':
             inputs_for_dh = inputs.to(device)
             break
         init_pre_act_dict = fetch_h(model)
+        tmp_pre_act_dict  = fetch_h(model)
     try:
         main(epochs=args.head_init_epochs, iterations=args.head_init_iterations, prefix='init_')
     except ValueError as e:
