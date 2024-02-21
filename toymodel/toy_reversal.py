@@ -62,6 +62,12 @@ def generate_data(num_samples, input_size, output_size, teacher_model, shift_cla
         y = (y + 1) % output_size  # Shift class labels by one
     return x, y
 
+def shift_rows(tensor):
+    last_column = tensor[:, -1].unsqueeze(1)
+    rest_columns = tensor[:, :-1]
+    shifted_tensor = torch.cat((last_column, rest_columns), dim=1)
+    return shifted_tensor
+
 def main():
     parser = argparse.ArgumentParser(description='Train a 3-layer MLP for classification.')
     parser.add_argument('--width', type=int, default=2048, help='Width of the hidden layers.')
@@ -124,6 +130,7 @@ def main():
         finetune_optimizer = optim.SGD(model.parameters(), lr=args.finetune_lr / args.width, momentum=0.9)
 
     x_finetune, y_finetune = generate_data(args.num_finetuning_samples, args.input_size, args.output_size, teacher_model, True)
+    #x_finetune = shift_rows(x_finetune)
     finetune_data_loader = [(x_finetune, y_finetune)]
 
     if args.lp_epochs > 0:
@@ -137,6 +144,7 @@ def main():
     model = train(model, finetune_optimizer, finetune_data_loader, args.ft_max_epochs, args.train_loss_limit)
 
     x_test, y_test = generate_data(1000, args.input_size, args.output_size, teacher_model, True)
+    #x_test = shift_rows(x_test)
     test_data_loader = [(x_test, y_test)]
     evaluate_loss(model, test_data_loader)
 
