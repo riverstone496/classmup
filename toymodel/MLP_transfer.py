@@ -151,6 +151,7 @@ def test(model, criterion, test_data_loader):
     with torch.no_grad():
         total_loss, correct, total = 0, 0, 0
         for x, y in test_data_loader:
+            x, y = x.to(device), y.to(device)
             output = model(x)
             loss = criterion(output, y.long())
             total_loss += loss.item()
@@ -181,6 +182,7 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
         model.train()
         total_loss, correct, total = 0, 0, 0
         for x, y in data_loader:
+            x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             output = model(x)
             loss = criterion(output, y.long())
@@ -247,15 +249,6 @@ def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shif
     test_data_loader = [(x_test, y_test)]
     return train_data_loader, test_data_loader
 
-def configure_model_and_optimizer(args):
-    """
-    Configures the model and optimizer based on the provided arguments.
-    :param args: Parsed command line arguments
-    :return: A tuple of (model, optimizer)
-    """
-    model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-    return model, optimizer
 
 def main():
     np.random.seed(234)
@@ -269,10 +262,13 @@ def main():
                     )
 
     # Initialize models and optimizer
-    model, optimizer = configure_model_and_optimizer(args)
+    model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
+    teacher_model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+    model = model.to(device)
 
     # Setup data loaders
-    train_data_loader, test_data_loader = setup_data_loaders(args.num_samples, args.input_size, args.output_size, model)
+    train_data_loader, test_data_loader = setup_data_loaders(args.num_samples, args.input_size, args.output_size, teacher_model)
 
     # Determine loss function based on argument
     criterion = nn.CrossEntropyLoss() if args.loss_type == 'CE' else nn.MSELoss()
@@ -287,7 +283,7 @@ def main():
         # Adjust the optimizer for fine-tuning
         finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width)
         # Generate new data for fine-tuning
-        finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, model, shift_class=True)
+        finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=True)
         # Fine-tune model
         model = train(model, finetune_optimizer, criterion, finetune_data_loader, test_data_loader, 10000, args.train_loss_limit, 'FineTuning/')
 
@@ -311,4 +307,6 @@ if __name__ == '__main__':
     parser.add_argument('--wandb', action='store_true', default=False)
 
     args = parser.parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     main()
