@@ -249,10 +249,17 @@ def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shif
     test_data_loader = [(x_test, y_test)]
     return train_data_loader, test_data_loader
 
+def model_shift(module, cor):
+    a_sqrt = torch.sqrt(torch.tensor(cor))
+    W = module.weight.data
+    J = torch.randn_like(W)
+    new_weights = a_sqrt * W + (1 - a_sqrt) * J
+    module.weight.data = new_weights
+    return module
 
 def main():
-    np.random.seed(234)
-    torch.manual_seed(234)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     if args.wandb:
         config = vars(args).copy()
@@ -279,11 +286,16 @@ def main():
     # Fine-tuning phase (if required)
     print("\nStart Finetuning\n")
     if args.finetune_lr > 0:
+        # Create Transfer model
         model = TransferModel(model,new_output_size=args.output_size)
+        # Create Teacher Model
+        model.fc1 = model_shift(model.fc1, args.input_shift_cor)
+        model.fc3 = model_shift(model.fc3, args.output_shift_cor)
+
         # Adjust the optimizer for fine-tuning
         finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width)
         # Generate new data for fine-tuning
-        finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=True)
+        finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=args.class_shift)
         # Fine-tune model
         model = train(model, finetune_optimizer, criterion, finetune_data_loader, test_data_loader, 10000, args.train_loss_limit, 'FineTuning/')
 
@@ -304,6 +316,12 @@ if __name__ == '__main__':
     parser.add_argument('--num_samples', type=int, default=2048, help='Number of samples for initial training.')
     parser.add_argument('--fine_tuning_num_samples', type=int, default=20, help='Number of samples for initial training.')
     parser.add_argument('--parametrization', choices=['muP', 'NTK', 'SP', 'LP'], default='NTK', help='Type of parametrization.')
+    
+    parser.add_argument('--input_shift_cor', type=float, default=1, help='Input Cor.')
+    parser.add_argument('--output_shift_cor', type=float, default=1, help='Output Cor.')
+    parser.add_argument('--class_shift', action='store_true', default=False)
+
+    parser.add_argument('--seed', type=int, default=123, help='seed')
     parser.add_argument('--wandb', action='store_true', default=False)
 
     args = parser.parse_args()
