@@ -472,9 +472,9 @@ if __name__=='__main__':
                         help='number of epochs to train (default: 20)')
     parser.add_argument('--train_acc_stop', type=float, default=None,
                         help='train_acc_stop (default: 20)')
-    parser.add_argument('--head_init_epochs', type=int, default=-1,
+    parser.add_argument('--lp_epochs', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
-    parser.add_argument('--head_init_iterations', type=int, default=-1,
+    parser.add_argument('--lp_iterations', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='enables CUDA training')
@@ -495,9 +495,9 @@ if __name__=='__main__':
     parser.add_argument('--CIFAR10Policy', action='store_true', default=False)
     parser.add_argument('--dataset_shuffle', action='store_true', default=False)
 
-    parser.add_argument('--lr1', type=float, default=1e-1,
+    parser.add_argument('--learning_rate1', type=float, default=1e-1,
                         help='learning rate')
-    parser.add_argument('--lr2', type=float, default=1e-1,
+    parser.add_argument('--learning_rate2', type=float, default=1e-1,
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0,
                         help='learning rate')
@@ -545,7 +545,9 @@ if __name__=='__main__':
     parser.add_argument('--warmup_epochs', type=int, default=0,
                         help='sched_power')
     
-    parser.add_argument('--save_ckpt', action='store_true', default=False)
+    parser.add_argument('--resume_ckpo_folder', type=str, default=None,
+                        help='sched_power')
+    
 
     parser.add_argument('--log_interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
@@ -561,10 +563,6 @@ if __name__=='__main__':
     parser.add_argument('--train_size', type=int, default=-1)
 
     parser.add_argument('--widen_factor', type=int, default=4)
-
-    parser.add_argument('--ckpt_path', type=str, default='./ckpt/mlp/')
-    parser.add_argument('--ckpt_interval', type=int, default=10)
-
     parser.add_argument('--loss_type', type=str, default='cross_entropy')
 
     parser.add_argument('--log_record', action='store_true', default=False)
@@ -591,6 +589,11 @@ if __name__=='__main__':
             config = json.load(f)
         dict_args.update(config)
     print(args)
+
+    args.lr1 = args.learning_rate1
+    args.lr2 = args.learning_rate2
+    args.head_init_epochs = args.lp_epochs
+    args.head_init_iterations = args.lp_iterations
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     args.job_id = os.environ.get('SLURM_JOBID')
@@ -641,11 +644,11 @@ if __name__=='__main__':
         
     muP_set(args)
 
-    if args.head_init_epochs == -1:
-        if args.head_init_iterations != -1:
-            args.head_init_epochs = 1 + args.head_init_iterations // dataset.num_steps_per_epoch
-        elif args.head_init_iterations == -1:
-            args.head_init_epochs = 0
+    if args.lp_epochs == -1:
+        if args.lp_iterations != -1:
+            args.lp_epochs = 1 + args.lp_iterations // dataset.num_steps_per_epoch
+        elif args.lp_iterations == -1:
+            args.lp_epochs = 0
 
     if args.pseudo_batch_size != -1:
         args.batch_size=args.pseudo_batch_size
@@ -653,11 +656,19 @@ if __name__=='__main__':
     model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
 
     for task_num in range(2):
+        if task_num == 0 and args.resume_ckpo_folder is not None:
+            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
+            folder_path = os.path.join(args.resume_ckpo_folder, file_name)
+            if os.path.isfile(folder_path):
+                checkpoint = torch.load(folder_path)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                continue
+            
         print('start task=',task_num)
         if task_num==0:
-            learning_rate = args.lr1
+            learning_rate = args.learning_rate1
         elif task_num==1:
-            learning_rate = args.lr2
+            learning_rate = args.learning_rate2
             args.scheduler = 'Constant'
         # Head_Init_Iters
         if args.log_weight_delta:
@@ -671,7 +682,7 @@ if __name__=='__main__':
                 break
             init_pre_act_dict = fetch_h(model)
         try:
-            main(epochs=args.head_init_epochs, iterations=args.head_init_iterations, prefix='init_', task_index=task_num)
+            main(epochs=args.lp_epochs, iterations=args.lp_iterations, prefix='init_', task_index=task_num)
         except ValueError as e:
             print(e)
 
@@ -682,11 +693,11 @@ if __name__=='__main__':
         else:
             optimizer = create_optimizer(args, model, lr = learning_rate)
         scheduler=None
-        if args.head_init_epochs == -1:
-            if args.head_init_iterations != -1:
-                args.head_init_epochs = 1 + args.head_init_iterations // dataset.num_steps_per_epoch
-            elif args.head_init_iterations == -1:
-                args.head_init_epochs = 0
+        if args.lp_epochs == -1:
+            if args.lp_iterations != -1:
+                args.lp_epochs = 1 + args.lp_iterations // dataset.num_steps_per_epoch
+            elif args.lp_iterations == -1:
+                args.lp_epochs = 0
         if args.scheduler == 'CosineAnnealingLR':
             scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
         elif args.scheduler == 'ExponentialLR':
@@ -708,5 +719,13 @@ if __name__=='__main__':
             main(epochs=args.epochs, iterations=-1, prefix='', task_index=task_num)
         except ValueError as e:
             print(e)
+
+        if task_num == 0 and args.resume_ckpo_folder is not None:
+            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
+            folder_path = os.path.join(args.resume_ckpo_folder, file_name)
+            torch.save({
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        }, folder_path)
     
     wandb.finish()
