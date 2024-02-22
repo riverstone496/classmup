@@ -63,6 +63,57 @@ class TransferModel(nn.Module):
         x = self.fc3(x)
         return x
 
+def register_fhook(model: torch.nn.Module):
+    # forward hook function
+    def forward_hook(_module, in_data, out_data):
+        _module.out_data = out_data.detach().clone()
+    for name, module in model.named_modules():
+        if len(list(module.children())) > 0:
+            continue
+        if all(not p.requires_grad for p in module.parameters()):
+            continue
+        module.register_forward_hook(forward_hook)
+    return model
+
+def fetch_h(model, inputs_for_dh):
+    model = register_fhook(model)
+    y = model(inputs_for_dh)
+    pre_act_dict = {}
+    for name, module in model.named_modules():
+        if len(list(module.children())) > 0:
+              continue
+        if all(not p.requires_grad for p in module.parameters()):
+            continue
+        pre_act_dict[name] = module.out_data
+    return pre_act_dict
+
+def log_h_delta(epoch, model, init_pre_act_dict, tmp_pre_act_dict, inputs_for_dh, prefix = '', tmp_dh=True):
+    pre_act_dict = fetch_h(model, inputs_for_dh)
+    h_norm_dict = {}
+    dh_norm_dict = {}
+    int_dh_norm_dict = {}
+    for mname in pre_act_dict.keys():
+        h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
+        dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
+        int_dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - tmp_pre_act_dict[mname]).mean(dtype=torch.float32).item()
+    log = {'epoch': epoch,
+           prefix + 'h/':h_norm_dict,
+           prefix + 'dh/': dh_norm_dict,}
+    if tmp_dh:
+        log[prefix + 'tmp_dh/'] = int_dh_norm_dict
+        tmp_pre_act_dict = fetch_h(model, inputs_for_dh=inputs_for_dh)
+    if args.wandb:
+        wandb.log(log)
+    return tmp_pre_act_dict
+
+def prepare_log_h_delta(model, test_loader):
+    for i, data in enumerate(test_loader, 0):
+        inputs, labels = data
+        break
+    init_pre_act_dict = fetch_h(model, inputs)
+    tmp_pre_act_dict  = fetch_h(model, inputs)
+    return inputs, init_pre_act_dict, tmp_pre_act_dict
+
 def initialize_optimizer(model, learning_rate, momentum, parametrization, width, muP_factor = 1e-2):
     """
     Initializes the optimizer with custom learning rates for fine-tuning.
@@ -122,6 +173,10 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
     :param early_stopping_loss: early stopping threshold for loss
     :return: trained model
     """
+
+    # Prepare for logging dh
+    inputs, init_pre_act_dict, tmp_pre_act_dict = prepare_log_h_delta(model, test_data_loader)
+
     for epoch in range(epochs):
         model.train()
         total_loss, correct, total = 0, 0, 0
@@ -141,6 +196,7 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
         
         if epoch % 10 == 0 or epoch == epochs - 1:
             test_loss, test_acc = test(model, criterion, test_data_loader)
+            tmp_pre_act_dict = log_h_delta(epoch, model, init_pre_act_dict, tmp_pre_act_dict, inputs_for_dh=inputs, prefix = prefix)
             print(f'Epoch {epoch+1}, Train Loss: {average_loss}, Train Acc: {accuracy}%, Test Loss: {test_loss}, Test Acc: {test_acc}')
             if args.wandb:
                 wandb.log({
@@ -155,6 +211,7 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
             test_loss, test_acc = test(model, criterion, test_data_loader)
             print(f'Early stopping at epoch {epoch+1}!')
             print(f'Epoch {epoch+1}, Train Loss: {average_loss}, Train Acc: {accuracy}%, Test Loss: {test_loss}, Test Acc: {test_acc}')
+            tmp_pre_act_dict = log_h_delta(epoch, model, init_pre_act_dict, tmp_pre_act_dict, inputs_for_dh=inputs, prefix = prefix, tmp_dh = False)
             break
     return model
 
