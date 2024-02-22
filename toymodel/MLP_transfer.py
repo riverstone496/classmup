@@ -114,7 +114,7 @@ def prepare_log_h_delta(model, test_loader):
     tmp_pre_act_dict  = fetch_h(model, inputs)
     return inputs, init_pre_act_dict, tmp_pre_act_dict
 
-def initialize_optimizer(model, learning_rate, momentum, parametrization, width, muP_factor = 1e-2):
+def initialize_optimizer(model, learning_rate, momentum, parametrization, width, muP_factor = 1e-3):
     """
     Initializes the optimizer with custom learning rates for fine-tuning.
     :param model: the model to optimize
@@ -203,10 +203,10 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
             if args.wandb:
                 wandb.log({
                     'epoch' : epoch+1,
-                    prefix + 'Train Loss' : average_loss,
-                    prefix + 'Train Acc' : accuracy,
-                    prefix + 'Test Loss' : test_loss,
-                    prefix + 'Test Acc' : test_acc,
+                    prefix + 'Train_Loss' : average_loss,
+                    prefix + 'Train_Acc' : accuracy,
+                    prefix + 'Test_Loss' : test_loss,
+                    prefix + 'Test_Acc' : test_acc,
                 })
 
         if early_stopping_loss is not None and average_loss <= early_stopping_loss:
@@ -293,11 +293,14 @@ def main():
         model.fc3 = model_shift(model.fc3, args.output_shift_cor)
 
         # Adjust the optimizer for fine-tuning
-        finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width)
+        finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width / args.base_width)
+        lp_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, 'LP', args.width)
         # Generate new data for fine-tuning
         finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=args.class_shift)
         # Fine-tune model
-        model = train(model, finetune_optimizer, criterion, finetune_data_loader, test_data_loader, 10000, args.train_loss_limit, 'FineTuning/')
+        if args.lp_epochs > 0:
+            model = train(model, lp_optimizer, criterion, finetune_data_loader, test_data_loader, args.lp_epochs, None, 'LP/')
+        model = train(model, finetune_optimizer, criterion, finetune_data_loader, test_data_loader, args.finetuning_epochs, args.train_loss_limit, 'FineTuning/')
 
 if __name__ == '__main__':
     """
@@ -305,9 +308,12 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser(description='Train a 3-layer MLP for classification.')
     parser.add_argument('--width', type=int, default=2048, help='Width of the hidden layers.')
+    parser.add_argument('--base_width', type=int, default=64, help='Width of the hidden layers.')
     parser.add_argument('--input_size', type=int, default=32, help='Input size.')
     parser.add_argument('--output_size', type=int, default=4, help='Number of classes for classification.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs for training.')
+    parser.add_argument('--lp_epochs', type=int, default=0, help='Number of epochs for training.')
+    parser.add_argument('--finetuning_epochs', type=int, default=10000, help='Number of epochs for training.')
     parser.add_argument('--train_loss_limit', type=float, default=1e-4, help='Loss threshold for early stopping.')
     parser.add_argument('--lr', type=float, default=1e-1, help='Learning rate.')
     parser.add_argument('--finetune_lr', type=float, default=1, help='Learning rate for fine-tuning.')
