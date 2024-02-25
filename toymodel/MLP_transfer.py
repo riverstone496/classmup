@@ -77,6 +77,7 @@ def register_fhook(model: torch.nn.Module):
 
 def fetch_h(model, inputs_for_dh):
     model = register_fhook(model)
+    inputs_for_dh = inputs_for_dh.to(device)
     y = model(inputs_for_dh)
     pre_act_dict = {}
     for name, module in model.named_modules():
@@ -105,6 +106,23 @@ def log_h_delta(epoch, model, init_pre_act_dict, tmp_pre_act_dict, inputs_for_dh
     if args.wandb:
         wandb.log(log)
     return tmp_pre_act_dict
+
+def layer_weight_norm(epoch, model, prefix = ''):
+    weight_dict = {}
+    grad_dict = {}
+    for name, module in model.named_modules():
+        if len(list(module.children())) > 0:
+              continue
+        if all(not p.requires_grad for p in module.parameters()):
+            continue
+        weight_dict[name] = torch.abs(module.weight.data).mean(dtype=torch.float32).item()
+        grad_dict[name] = torch.abs(module.weight.grad.data).mean(dtype=torch.float32).item()
+    log = {'epoch': epoch,
+           prefix + 'weight_norm/':weight_dict,
+           prefix + 'grad_norm/': grad_dict,}
+    if args.wandb:
+        wandb.log(log)
+
 
 def prepare_log_h_delta(model, test_loader):
     for i, data in enumerate(test_loader, 0):
@@ -199,6 +217,7 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
         if epoch % 10 == 0 or epoch == epochs - 1:
             test_loss, test_acc = test(model, criterion, test_data_loader)
             tmp_pre_act_dict = log_h_delta(epoch, model, init_pre_act_dict, tmp_pre_act_dict, inputs_for_dh=inputs, prefix = prefix)
+            layer_weight_norm(epoch, model, prefix)
             print(f'Epoch {epoch+1}, Train Loss: {average_loss}, Train Acc: {accuracy}%, Test Loss: {test_loss}, Test Acc: {test_acc}')
             if args.wandb:
                 wandb.log({
@@ -289,11 +308,11 @@ def main():
         # Create Transfer model
         model = TransferModel(model,new_output_size=args.output_size)
         # Create Teacher Model
-        model.fc1 = model_shift(model.fc1, args.input_shift_cor)
-        model.fc3 = model_shift(model.fc3, args.output_shift_cor)
+        model.fc1 = model_shift(model.fc1, args.input_shift_cor).to(device)
+        model.fc3 = model_shift(model.fc3, args.output_shift_cor).to(device)
 
         # Adjust the optimizer for fine-tuning
-        finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width / args.base_width)
+        finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width / args.base_width, args.muP_factor)
         lp_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, 'LP', args.width)
         # Generate new data for fine-tuning
         finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=args.class_shift)
@@ -325,6 +344,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--input_shift_cor', type=float, default=1, help='Input Cor.')
     parser.add_argument('--output_shift_cor', type=float, default=1, help='Output Cor.')
+    parser.add_argument('--muP_factor', type=float, default=1, help='Output Cor.')
     parser.add_argument('--class_shift', action='store_true', default=False)
 
     parser.add_argument('--seed', type=int, default=123, help='seed')
