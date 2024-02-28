@@ -252,7 +252,10 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
         if early_stopping_loss is not None and average_loss <= early_stopping_loss:
             test_loss, test_acc = test(model, criterion, test_data_loader)
             print(f'Early stopping at epoch {epoch+1}!')
-            print(f'Epoch {epoch+1}, Train Loss: {average_loss}, Train Acc: {accuracy}%, Test Loss: {test_loss}, Test Acc: {test_acc}')
+            if task_num == 0:
+                print(f'Epoch {epoch+1}, Train Loss: {average_loss}, Train Acc: {accuracy}%, Test Loss: {test_loss}, Test Acc: {test_acc}')
+            if task_num == 1:
+                print(f'Epoch {epoch+1}, Train Loss: {average_loss}, Train Acc: {accuracy}%, Test Loss: {test_loss}, Test Acc: {test_acc} , Prev Test Loss: {test_loss2}, Prev Test Acc: {test_acc2}')
             tmp_pre_act_dict = log_h_delta(epoch, model, init_pre_act_dict, tmp_pre_act_dict, inputs_for_dh=inputs, prefix = prefix, tmp_dh = False, task_num=task_num)
             break
     return model
@@ -319,7 +322,7 @@ if __name__ == '__main__':
     parser.add_argument('--parametrization', choices=['muP', 'NTK', 'SP', 'LP'], default='NTK', help='Type of parametrization.')
     
     parser.add_argument('--input_shift_cor', type=float, default=1, help='Input Cor.')
-    parser.add_argument('--output_shift_cor', type=float, default=0.8, help='Output Cor.')
+    parser.add_argument('--output_shift_cor', type=float, default=0.2, help='Output Cor.')
     parser.add_argument('--muP_factor', type=float, default=1, help='Output Cor.')
     parser.add_argument('--class_shift', action='store_true', default=False)
 
