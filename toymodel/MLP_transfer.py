@@ -290,7 +290,7 @@ def main():
     # Initialize models and optimizer
     model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
     teacher_model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+    optimizer = initialize_optimizer(model, args.lr, 0.9, 'muP', args.width / args.base_width, args.muP_factor)
     model = model.to(device)
 
     # Setup data loaders
@@ -343,7 +343,7 @@ if __name__ == '__main__':
     parser.add_argument('--parametrization', choices=['muP', 'NTK', 'SP', 'LP'], default='NTK', help='Type of parametrization.')
     
     parser.add_argument('--input_shift_cor', type=float, default=1, help='Input Cor.')
-    parser.add_argument('--output_shift_cor', type=float, default=1, help='Output Cor.')
+    parser.add_argument('--output_shift_cor', type=float, default=0.8, help='Output Cor.')
     parser.add_argument('--muP_factor', type=float, default=1, help='Output Cor.')
     parser.add_argument('--class_shift', action='store_true', default=False)
 
