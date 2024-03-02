@@ -290,7 +290,7 @@ def main():
     # Initialize models and optimizer
     model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
     teacher_model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
-    optimizer = initialize_optimizer(model, args.lr, 0.9, 'muP', args.width / args.base_width, args.muP_factor)
+    optimizer = initialize_optimizer(model, args.lr, 0.9, args.parametrization, args.width / args.base_width, args.muP_factor)
     model = model.to(device)
 
     # Setup data loaders

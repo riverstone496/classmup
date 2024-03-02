@@ -13,6 +13,8 @@ def create_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
             layer_lr *= input_lr_const * (args.base_width / args.width) ** args.c_input
         elif 'output' in name or 'head' in name:
             layer_lr *= output_lr_const * (args.base_width / args.width) ** args.c_output
+        else:
+            layer_lr *= (args.base_width / args.width) ** args.c_hidden
         param_groups.append({'params': param, 'lr': layer_lr})
     # オプティマイザの選択と初期化
     if args.optim == 'sgd':

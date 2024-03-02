@@ -162,3 +162,10 @@ class MultiHeadModel(nn.Module):
         elif task == 1:
             x = self.head2(x)
         return x
+    
+    def disable_head1_grad(self):
+        """
+        head1の全てのパラメータに対して、勾配計算を無効にする。
+        """
+        for param in self.head1.parameters():
+            param.requires_grad = False

@@ -36,6 +36,9 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
     global task0_epoch
     total_train_time=0
     epoch = 0
+    for i in range(task_index+1):
+        train_accuracy=trainloss_all(epoch, prefix, task_index=i, phase=task_index)
+        nantf = val(epoch, prefix, task_index=i, phase=task_index)
     for epoch in range(1, epochs + 1):
         epoch += task_index * prev_epochs[prefix]
         start = time.time()
@@ -181,6 +184,7 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
                 epoch, batch_idx * len(x), len(dataset.train_loader[task_index].dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
             l1_norm, l2_norm = get_weight_norm(model)
+            layer_weight_norm(epoch, model, prefix = prefix)
             if acc>max_train_acc[task_index]:
                 max_train_acc[task_index]=acc
             if loss<min_train_loss[task_index]:
@@ -260,6 +264,24 @@ def fetch_h(model):
             continue
         pre_act_dict[name] = module.out_data
     return pre_act_dict
+
+def layer_weight_norm(epoch, model, prefix = ''):
+    weight_dict = {}
+    grad_dict = {}
+    for name, module in model.named_modules():
+        if len(list(module.children())) > 0:
+              continue
+        if all(not p.requires_grad for p in module.parameters()):
+            continue
+        if module.weight.grad is None:
+            continue
+        weight_dict[name] = torch.abs(module.weight.data).mean(dtype=torch.float32).item()
+        grad_dict[name] = torch.abs(module.weight.grad.data).mean(dtype=torch.float32).item()
+    log = {'epoch': epoch,
+           prefix + 'weight_norm/':weight_dict,
+           prefix + 'grad_norm/': grad_dict,}
+    if args.wandb:
+        wandb.log(log)
 
 def log_h_delta(epoch, prefix = ''):
     pre_act_dict = fetch_h(model)
@@ -537,12 +559,15 @@ if __name__=='__main__':
                         help='log_type')
     
     parser.add_argument('--parametrization', type=str, default='SP')
+    parser.add_argument('--task1_parametrization', type=str, default=None)
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
     parser.add_argument('--scheduler', type=str, default=None)
     parser.add_argument('--sched_power', type=float, default=1,
                         help='sched_power')
-    parser.add_argument('--warmup_epochs', type=int, default=0,
+    parser.add_argument('--warmup_epochs1', type=int, default=0,
+                        help='sched_power')
+    parser.add_argument('--warmup_epochs2', type=int, default=0,
                         help='sched_power')
     
     parser.add_argument('--resume_ckpo_folder', type=str, default=None,
@@ -654,10 +679,14 @@ if __name__=='__main__':
         args.batch_size=args.pseudo_batch_size
     print('Start Model Preparing')
     model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
+    if args.task1_parametrization is None:
+        args.task1_parametrization = args.parametrization
 
     for task_num in range(2):
+        if task_num == 1:
+            model.disable_head1_grad()
         if task_num == 0 and args.resume_ckpo_folder is not None:
-            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
+            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
             folder_path = os.path.join(args.resume_ckpo_folder, file_name)
             if os.path.isfile(folder_path):
                 checkpoint = torch.load(folder_path)
@@ -667,8 +696,10 @@ if __name__=='__main__':
         print('start task=',task_num)
         if task_num==0:
             learning_rate = args.learning_rate1
+            warmup_epochs = args.warmup_epochs1
         elif task_num==1:
             learning_rate = args.learning_rate2
+            warmup_epochs = args.warmup_epochs2
             args.scheduler = 'Constant'
         # Head_Init_Iters
         if args.log_weight_delta:
@@ -699,7 +730,7 @@ if __name__=='__main__':
             elif args.lp_iterations == -1:
                 args.lp_epochs = 0
         if args.scheduler == 'CosineAnnealingLR':
-            scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
+            scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=warmup_epochs)
         elif args.scheduler == 'ExponentialLR':
             scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
         elif args.scheduler == 'Fraction':
@@ -727,5 +758,6 @@ if __name__=='__main__':
                         'model_state_dict': model.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict(),
                         }, folder_path)
+            
     
     wandb.finish()

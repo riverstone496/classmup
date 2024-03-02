@@ -260,7 +260,7 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
             break
     return model
 
-def generate_data(num_samples, input_size, output_size, teacher_model, shift_class=False):
+def generate_data(num_samples, input_size, output_size, teacher_model, shift_x = 0, shift_class=False):
     """
     Generates synthetic data using a teacher model.
     :param num_samples: number of samples to generate
@@ -270,14 +270,14 @@ def generate_data(num_samples, input_size, output_size, teacher_model, shift_cla
     :param shift_class: whether to shift class labels by one
     :return: tuple of input tensor and labels
     """
-    x = torch.randn(num_samples, input_size)
+    x = torch.randn(num_samples, input_size) + shift_x
     y_raw = teacher_model(x)
     y = torch.argmax(y_raw, dim=1)  # Convert to class labels
     if shift_class:
         y = (y + 1) % output_size  # Shift class labels by one
     return x, y
 
-def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shift_class = False):
+def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shift_x=0, shift_class = False):
     """
     Sets up data loaders for training and testing.
     :param num_samples: Number of samples for training data
@@ -286,9 +286,9 @@ def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shif
     :param teacher_model: The model used to generate synthetic labels
     :return: A tuple of (train_data_loader, test_data_loader)
     """
-    x_train, y_train = generate_data(num_samples, input_size, output_size, teacher_model, shift_class)
+    x_train, y_train = generate_data(num_samples, input_size, output_size, teacher_model, shift_x, shift_class)
     train_data_loader = [(x_train, y_train)]
-    x_test, y_test = generate_data(1000, input_size, output_size, teacher_model, shift_class)
+    x_test, y_test = generate_data(1000, input_size, output_size, teacher_model, shift_x, shift_class)
     test_data_loader = [(x_test, y_test)]
     return train_data_loader, test_data_loader
 
@@ -322,7 +322,7 @@ if __name__ == '__main__':
     parser.add_argument('--parametrization', choices=['muP', 'NTK', 'SP', 'LP'], default='NTK', help='Type of parametrization.')
     
     parser.add_argument('--input_shift_cor', type=float, default=1, help='Input Cor.')
-    parser.add_argument('--output_shift_cor', type=float, default=0.2, help='Output Cor.')
+    parser.add_argument('--output_shift_cor', type=float, default=0., help='Output Cor.')
     parser.add_argument('--muP_factor', type=float, default=1, help='Output Cor.')
     parser.add_argument('--class_shift', action='store_true', default=False)
 
@@ -370,7 +370,7 @@ if __name__ == '__main__':
         finetune_optimizer = initialize_optimizer(model, args.task2_lr, 0.9, args.parametrization, args.width / args.base_width, args.muP_factor)
         lp_optimizer = initialize_optimizer(model, args.task2_lr, 0.9, 'LP', args.width)
         # Generate new data for fine-tuning
-        task1_data_loader, task1_test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=args.class_shift)
+        task1_data_loader, task1_test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_x=1, shift_class=args.class_shift)
         # Fine-tune model
         if args.lp_epochs > 0:
             model = train(model, lp_optimizer, criterion, task1_data_loader, task1_test_data_loader, args.lp_epochs, None, 'LP/', task_num=1)
