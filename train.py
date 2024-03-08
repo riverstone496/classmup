@@ -378,6 +378,13 @@ def muP_set(args):
             args.c_output=1
             args.c_hidden=0
             args.c_input=-1
+        if args.optim == 'adam':
+            args.b_output=1
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=1
+            args.c_input=0
         if 'kfac' in args.optim:
             args.b_output=1
             args.b_hidden=1/2

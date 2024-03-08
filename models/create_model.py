@@ -145,15 +145,18 @@ class MultiHeadModel(nn.Module):
         self.head1 = nn.Linear(self.base_model.num_features, num_classes//2)  # Task 1のhead
         self.head2 = nn.Linear(self.base_model.num_features, num_classes//2)  # Task 2のhead
 
-        if args.output_nonzero:
-            nn.init.kaiming_normal_(self.head1.weight.data, a=1, mode='fan_in')
-            nn.init.kaiming_normal_(self.head2.weight.data, a=1, mode='fan_in')
-            if args.b_output != 1/2:
-                self.head1.weight.data /= (self.base_model.num_features / (num_classes//2))**(args.b_output - 1/2)
-                self.head2.weight.data /= (self.base_model.num_features / (num_classes//2))**(args.b_output - 1/2)
-        else:
+        if 'zero' in args.task1_parametrization:
             nn.init.zeros_(self.head1.weight.data)
+        else:
+            nn.init.kaiming_normal_(self.head1.weight.data, a=1, mode='fan_in')
+            if 'muP' in args.task1_parametrization or 'Spectral' in args.task1_parametrization:
+                self.head1.weight.data /= (self.base_model.num_features / (num_classes//2))**(1/2)
+        if 'zero' in args.task2_parametrization:
             nn.init.zeros_(self.head2.weight.data)
+        else:
+            nn.init.kaiming_normal_(self.head2.weight.data, a=1, mode='fan_in')
+            if 'muP' in args.task2_parametrization or 'Spectral' in args.task2_parametrization:
+                self.head2.weight.data /= (self.base_model.num_features / (num_classes//2))**(1/2)            
 
     def forward(self, x, task):
         x = self.base_model(x)

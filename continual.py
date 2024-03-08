@@ -558,8 +558,8 @@ if __name__=='__main__':
     parser.add_argument('--norm_type', type=str, default='l1',
                         help='log_type')
     
-    parser.add_argument('--parametrization', type=str, default='SP')
     parser.add_argument('--task1_parametrization', type=str, default=None)
+    parser.add_argument('--task2_parametrization', type=str, default='SP')
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
     parser.add_argument('--scheduler', type=str, default=None)
@@ -667,8 +667,6 @@ if __name__=='__main__':
     else:
         args.accumulate_iters=1
         
-    muP_set(args)
-
     if args.lp_epochs == -1:
         if args.lp_iterations != -1:
             args.lp_epochs = 1 + args.lp_iterations // dataset.num_steps_per_epoch
@@ -679,8 +677,8 @@ if __name__=='__main__':
         args.batch_size=args.pseudo_batch_size
     print('Start Model Preparing')
     model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
-    if args.task1_parametrization is None:
-        args.task1_parametrization = args.parametrization
+    if args.task2_parametrization is None:
+        args.task2_parametrization = args.task1_parametrization
 
     for task_num in range(2):
         if task_num == 1:
@@ -697,10 +695,13 @@ if __name__=='__main__':
         if task_num==0:
             learning_rate = args.learning_rate1
             warmup_epochs = args.warmup_epochs1
+            args.parametrization = args.task1_parametrization
         elif task_num==1:
             learning_rate = args.learning_rate2
             warmup_epochs = args.warmup_epochs2
             args.scheduler = 'Constant'
+            args.parametrization = args.task2_parametrization
+        muP_set(args)
         # Head_Init_Iters
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
@@ -752,7 +753,7 @@ if __name__=='__main__':
             print(e)
 
         if task_num == 0 and args.resume_ckpo_folder is not None:
-            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
+            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
             folder_path = os.path.join(args.resume_ckpo_folder, file_name)
             torch.save({
                         'model_state_dict': model.state_dict(),
