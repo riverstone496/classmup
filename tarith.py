@@ -1,5 +1,5 @@
 import sys,os
-sys.path.append(os.path.abspath('../../'))
+#sys.path.append(os.path.abspath('../../'))
 sys.path.append('./utils/')
 
 import argparse
@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 import os,json
 import utils.continual_dataset
-from models.create_model import create_model,initialize_weight, create_finetune_model, MultiHeadModel
+from models.create_model import MultiHeadModel
 from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
@@ -30,18 +30,18 @@ max_train_acc={0:0, 1:0}
 min_train_loss={0:np.inf, 1:np.inf}
 max_train_acc_all={0:0, 1:0}
 min_train_loss_all={0:np.inf, 1:np.inf}
-prev_epochs = {'init_':0, '':0}
 os.environ["WANDB_HOST"] = os.environ.get('SLURM_JOBID')
 
 def main(epochs, iterations = -1, prefix = '', task_index = 0):
     global task0_epoch
     total_train_time=0
     epoch = 0
+    print("Start Evaluating First Acc")
     for i in range(task_index+1):
         train_accuracy=trainloss_all(epoch, prefix, task_index=i, phase=task_index)
         nantf = val(epoch, prefix, task_index=i, phase=task_index)
+    print("Start Training")
     for epoch in range(1, epochs + 1):
-        epoch += task_index * prev_epochs[prefix]
         start = time.time()
         train(epoch, prefix, iterations, task_index=task_index)
         total_train_time += time.time() - start
@@ -56,7 +56,6 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
             if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
                 wandb.run.summary['total_epochs_task'+str(task_index)] = epoch
                 break
-    prev_epochs[prefix] += epoch
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
@@ -95,7 +94,7 @@ def val(epoch, prefix = '', task_index = 0, phase = 0):
                prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc[task_index],
                prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss[task_index]}
         wandb.log(log)
-        log = {prefix+'epoch': epoch - prev_epochs[prefix],
+        log = {prefix+'epoch': epoch,
                'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
                'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy}
         wandb.log(log)
@@ -140,7 +139,7 @@ def trainloss_all(epoch, prefix = '', task_index = 0, phase=0):
                prefix+'task' + str(task_index) +'_max_train_acc_all':max_train_acc_all[task_index],
                prefix+'task' + str(task_index) +'_min_train_loss_all':min_train_loss_all[task_index]}
         wandb.log(log)
-        log = {prefix+'epoch': epoch - prev_epochs[prefix],
+        log = {prefix+'epoch': epoch ,
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy}
         wandb.log(log)
@@ -179,11 +178,13 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
             optimizer.zero_grad(set_to_none=True)
         
         if batch_idx%100==0 and args.wandb:
+            dataset_num_steps_per_epoch = len(dataset.train_loader[task_index].dataset)
+            dataset.num_steps_per_epoch = dataset_num_steps_per_epoch
             pred = y.data.max(1)[1]
             acc = 100. * pred.eq(t.data).cpu().sum() / t.size(0)
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(x), len(dataset.train_loader[task_index].dataset),
-                100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
+                epoch, batch_idx * len(x), dataset_num_steps_per_epoch,
+                100. * batch_idx / dataset_num_steps_per_epoch, float(loss)))
             l1_norm, l2_norm = get_weight_norm(model)
             layer_weight_norm(epoch, model, prefix = prefix)
             if acc>max_train_acc[task_index]:
@@ -191,7 +192,7 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
             if loss<min_train_loss[task_index]:
                 min_train_loss[task_index]=loss
             log = {prefix+'epoch': epoch,
-                   prefix+'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
+                   prefix+'iteration': (epoch-1) * dataset_num_steps_per_epoch+batch_idx,
                    prefix+'task'+str(task_index) +'_train_loss': float(loss),
                    prefix+'task'+str(task_index) +'_train_accuracy': float(acc),
                    prefix+'task'+str(task_index) +'_max_train_acc':max_train_acc[task_index],
@@ -337,6 +338,37 @@ def muP_set(args):
             args.c_input=0
             args.c_hidden=0
     if args.parametrization == 'UP':
+        args.output_nonzero = False
+        if args.optim == 'sgd':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=1
+            args.c_input=0
+        if 'kfac' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+        if args.optim == 'shampoo':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1/2
+            args.c_hidden=1/2
+            args.c_input=0
+        if 'foof' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+    if args.parametrization == 'UP_output_zero':
+        args.output_nonzero = True
         if args.optim == 'sgd':
             args.b_output=1/2
             args.b_hidden=1/2
@@ -518,9 +550,7 @@ if __name__=='__main__':
     parser.add_argument('--CIFAR10Policy', action='store_true', default=False)
     parser.add_argument('--dataset_shuffle', action='store_true', default=False)
 
-    parser.add_argument('--learning_rate1', type=float, default=1e-1,
-                        help='learning rate')
-    parser.add_argument('--learning_rate2', type=float, default=1e-1,
+    parser.add_argument('--learning_rate', type=float, default=1e-1,
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0,
                         help='learning rate')
@@ -559,18 +589,15 @@ if __name__=='__main__':
     parser.add_argument('--norm_type', type=str, default='l1',
                         help='log_type')
     
-    parser.add_argument('--task1_parametrization', type=str, default=None)
-    parser.add_argument('--task2_parametrization', type=str, default='SP')
+    parser.add_argument('--parametrization', type=str, default='SP')
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
     parser.add_argument('--scheduler', type=str, default=None)
     parser.add_argument('--sched_power', type=float, default=1,
                         help='sched_power')
-    parser.add_argument('--warmup_epochs1', type=int, default=0,
+    parser.add_argument('--warmup_epochs', type=int, default=0,
                         help='sched_power')
-    parser.add_argument('--warmup_epochs2', type=int, default=0,
-                        help='sched_power')
-    
+
     parser.add_argument('--resume_ckpo_folder', type=str, default=None,
                         help='sched_power')
     
@@ -603,6 +630,7 @@ if __name__=='__main__':
 
     parser.add_argument('--use_fractal_model', action='store_true', default=False)
     parser.add_argument('--pretrained_path', type=str, default='./pretrained/exfractal_21k_tiny.pth.tar')
+    parser.add_argument('--dataset_path', type=str, default='./data/continual_cifar10/c10_5_5.pt')
 
     parser.add_argument('--config', default=None,
                         help='config file path')
@@ -616,8 +644,6 @@ if __name__=='__main__':
         dict_args.update(config)
     print(args)
 
-    args.lr1 = args.learning_rate1
-    args.lr2 = args.learning_rate2
     args.head_init_epochs = args.lp_epochs
     args.head_init_iterations = args.lp_iterations
 
@@ -625,6 +651,7 @@ if __name__=='__main__':
     args.job_id = os.environ.get('SLURM_JOBID')
     cudnn.benchmark = True  # Should make training should go faster for large models
     config = vars(args).copy()
+    print(torch.__version__)
 
     if args.wandb:
         wandb.init( config=config,
@@ -641,23 +668,29 @@ if __name__=='__main__':
     device = torch.device('cuda')
     
     print('Start creating Dataset')
-    if args.dataset == 'MNIST':
-        dataset = utils.continual_dataset.MNIST(args=args)
-    elif args.dataset == 'FashionMNIST':
-        dataset = utils.continual_dataset.FashionMNIST(args=args)
-    elif args.dataset == 'CIFAR10':
-        dataset = utils.continual_dataset.CIFAR10(args=args)
-    elif args.dataset == 'CIFAR100':
-        dataset = utils.continual_dataset.CIFAR100(args=args)
-    elif args.dataset == 'STL10':
-        dataset = utils.continual_dataset.STL(args=args)
-    elif args.dataset == 'SVHN':
-        dataset = utils.continual_dataset.SVHN(args=args)
-    elif args.dataset == 'Flowers':
-        dataset = utils.continual_dataset.Flowers(args=args)
-    elif args.dataset == 'Cars':
-        dataset = utils.continual_dataset.Cars(args=args)
-    print('Finished creating Dataset')
+    file_path= args.dataset_path
+    if os.path.exists(file_path):
+        dataset = torch.load(file_path)
+    else:
+        if args.dataset == 'MNIST':
+            dataset = utils.continual_dataset.MNIST(args=args)
+        elif args.dataset == 'FashionMNIST':
+            dataset = utils.continual_dataset.FashionMNIST(args=args)
+        elif args.dataset == 'CIFAR10':
+            dataset = utils.continual_dataset.CIFAR10(args=args)
+        elif args.dataset == 'CIFAR100':
+            dataset = utils.continual_dataset.CIFAR100(args=args)
+        elif args.dataset == 'STL10':
+            dataset = utils.continual_dataset.STL(args=args)
+        elif args.dataset == 'SVHN':
+            dataset = utils.continual_dataset.SVHN(args=args)
+        elif args.dataset == 'Flowers':
+            dataset = utils.continual_dataset.Flowers(args=args)
+        elif args.dataset == 'Cars':
+            dataset = utils.continual_dataset.Cars(args=args)
+        torch.save(dataset, file_path)
+
+        print('Finished creating Dataset')
 
     if args.class_scaling:
         if args.model == 'mlp':
@@ -677,39 +710,24 @@ if __name__=='__main__':
     if args.pseudo_batch_size != -1:
         args.batch_size=args.pseudo_batch_size
     print('Start Model Preparing')
-    if args.task2_parametrization is None:
-        args.task2_parametrization = args.task1_parametrization
 
+    args.task1_parametrization = args.parametrization
+    args.task2_parametrization = args.parametrization
     pretrained_model = MultiHeadModel(args=args, num_classes = dataset.num_classes).to(device=device)
     models = []
     for task_num in range(2):
         model = copy.deepcopy(pretrained_model)
         if task_num == 1:
             model.disable_head1_grad()
-        if task_num == 0 and args.resume_ckpo_folder is not None:
-            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
-            folder_path = os.path.join(args.resume_ckpo_folder, file_name)
-            if os.path.isfile(folder_path):
-                checkpoint = torch.load(folder_path)
-                model.load_state_dict(checkpoint['model_state_dict'])
-                continue
-            
+
         print('start task=',task_num)
-        if task_num==0:
-            learning_rate = args.learning_rate1
-            warmup_epochs = args.warmup_epochs1
-            args.parametrization = args.task1_parametrization
-        elif task_num==1:
-            learning_rate = args.learning_rate2
-            warmup_epochs = args.warmup_epochs2
-            args.scheduler = 'Constant'
-            args.parametrization = args.task2_parametrization
         muP_set(args)
         # Head_Init_Iters
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
         optimizer = create_optimizer_for_head(args, model, lr = args.init_lr)
         scheduler=None    
+        print("Prepare for log_h_delta")
         if args.log_h_delta:
             for i, data in enumerate(dataset.val_loader[0], 0):
                 inputs, labels = data
@@ -724,9 +742,9 @@ if __name__=='__main__':
         if args.log_weight_delta:
             initial_params = [param.clone() for param in model.parameters()]
         if 'Spectral' in args.parametrization:
-            optimizer = create_spectral_optimizer(args, model, lr = learning_rate)
+            optimizer = create_spectral_optimizer(args, model, lr = args.learning_rate)
         else:
-            optimizer = create_optimizer(args, model, lr = learning_rate)
+            optimizer = create_optimizer(args, model, lr = args.learning_rate)
         scheduler=None
         if args.lp_epochs == -1:
             if args.lp_iterations != -1:
@@ -734,7 +752,7 @@ if __name__=='__main__':
             elif args.lp_iterations == -1:
                 args.lp_epochs = 0
         if args.scheduler == 'CosineAnnealingLR':
-            scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=warmup_epochs)
+            scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
         elif args.scheduler == 'ExponentialLR':
             scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
         elif args.scheduler == 'Fraction':
@@ -755,14 +773,6 @@ if __name__=='__main__':
         except ValueError as e:
             print(e)
 
-        if task_num == 0 and args.resume_ckpo_folder is not None:
-            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
-            folder_path = os.path.join(args.resume_ckpo_folder, file_name)
-            torch.save({
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        }, folder_path)
-            
         models.append(copy.deepcopy(model))
     
 
@@ -772,7 +782,7 @@ if __name__=='__main__':
     model_2_diff = {name: models[1].state_dict()[name] - initial_state_dict[name] for name in initial_state_dict}
     combined_weights = {name: initial_state_dict[name] + model_1_diff[name] + model_2_diff[name] for name in initial_state_dict}
     pretrained_model.load_state_dict(combined_weights)
-    val(0, 'Task Arithmetic', task_index=0, phase='arithmetic')
-    val(0, 'Task Arithmetic', task_index=1, phase='arithmetic')
+    val(0, 'TaskArithmetic', task_index=0, phase='arithmetic')
+    val(0, 'TaskArithmetic', task_index=1, phase='arithmetic')
 
     wandb.finish()
