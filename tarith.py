@@ -765,7 +765,14 @@ if __name__=='__main__':
             
         models.append(copy.deepcopy(model))
     
-    
 
+    # Perform Task Arithmetic
+    initial_state_dict = pretrained_model.state_dict()
+    model_1_diff = {name: models[0].state_dict()[name] - initial_state_dict[name] for name in initial_state_dict}
+    model_2_diff = {name: models[1].state_dict()[name] - initial_state_dict[name] for name in initial_state_dict}
+    combined_weights = {name: initial_state_dict[name] + model_1_diff[name] + model_2_diff[name] for name in initial_state_dict}
+    pretrained_model.load_state_dict(combined_weights)
+    val(0, 'Task Arithmetic', task_index=0, phase='arithmetic')
+    val(0, 'Task Arithmetic', task_index=1, phase='arithmetic')
 
     wandb.finish()
