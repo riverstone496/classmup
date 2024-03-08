@@ -236,7 +236,7 @@ def train(model, optimizer, criterion, data_loader, test_data_loader, epochs, ea
             break
     return model
 
-def generate_data(num_samples, input_size, output_size, teacher_model, shift_class=False):
+def generate_data(num_samples, input_size, output_size, teacher_model, shift_x = 0, shift_class=False):
     """
     Generates synthetic data using a teacher model.
     :param num_samples: number of samples to generate
@@ -246,14 +246,14 @@ def generate_data(num_samples, input_size, output_size, teacher_model, shift_cla
     :param shift_class: whether to shift class labels by one
     :return: tuple of input tensor and labels
     """
-    x = torch.randn(num_samples, input_size)
+    x = torch.randn(num_samples, input_size) + shift_x
     y_raw = teacher_model(x)
     y = torch.argmax(y_raw, dim=1)  # Convert to class labels
     if shift_class:
         y = (y + 1) % output_size  # Shift class labels by one
     return x, y
 
-def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shift_class = False):
+def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shift_x=0, shift_class = False):
     """
     Sets up data loaders for training and testing.
     :param num_samples: Number of samples for training data
@@ -262,9 +262,9 @@ def setup_data_loaders(num_samples, input_size, output_size, teacher_model, shif
     :param teacher_model: The model used to generate synthetic labels
     :return: A tuple of (train_data_loader, test_data_loader)
     """
-    x_train, y_train = generate_data(num_samples, input_size, output_size, teacher_model, shift_class)
+    x_train, y_train = generate_data(num_samples, input_size, output_size, teacher_model, shift_x, shift_class)
     train_data_loader = [(x_train, y_train)]
-    x_test, y_test = generate_data(1000, input_size, output_size, teacher_model, shift_class)
+    x_test, y_test = generate_data(1000, input_size, output_size, teacher_model, shift_x, shift_class)
     test_data_loader = [(x_test, y_test)]
     return train_data_loader, test_data_loader
 
@@ -290,7 +290,7 @@ def main():
     # Initialize models and optimizer
     model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
     teacher_model = ThreeLayerMLP(args.input_size, args.width, args.output_size, args.activation)
-    optimizer = initialize_optimizer(model, args.lr, 0.9, args.parametrization, args.width / args.base_width, args.muP_factor)
+    optimizer = initialize_optimizer(model, args.lr, 0.9, 'muP', args.width / args.base_width, args.muP_factor)
     model = model.to(device)
 
     # Setup data loaders
@@ -315,7 +315,7 @@ def main():
         finetune_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, args.parametrization, args.width / args.base_width, args.muP_factor)
         lp_optimizer = initialize_optimizer(model, args.finetune_lr, 0.9, 'LP', args.width)
         # Generate new data for fine-tuning
-        finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=args.class_shift)
+        finetune_data_loader, test_data_loader = setup_data_loaders(args.fine_tuning_num_samples, args.input_size, args.output_size, teacher_model, shift_class=args.class_shift, shift_x = args.shift_x)
         # Fine-tune model
         if args.lp_epochs > 0:
             model = train(model, lp_optimizer, criterion, finetune_data_loader, test_data_loader, args.lp_epochs, None, 'LP/')
@@ -334,9 +334,9 @@ if __name__ == '__main__':
     parser.add_argument('--lp_epochs', type=int, default=0, help='Number of epochs for training.')
     parser.add_argument('--finetuning_epochs', type=int, default=10000, help='Number of epochs for training.')
     parser.add_argument('--train_loss_limit', type=float, default=1e-4, help='Loss threshold for early stopping.')
-    parser.add_argument('--lr', type=float, default=1e-1, help='Learning rate.')
+    parser.add_argument('--lr', type=float, default=10, help='Learning rate.')
     parser.add_argument('--finetune_lr', type=float, default=1, help='Learning rate for fine-tuning.')
-    parser.add_argument('--activation', choices=['ReLU', 'Linear'], default='Linear', help='Activation function.')
+    parser.add_argument('--activation', choices=['ReLU', 'Linear'], default='ReLU', help='Activation function.')
     parser.add_argument('--loss_type', choices=['MSE', 'CE'], default='CE', help='Loss type.')
     parser.add_argument('--num_samples', type=int, default=2048, help='Number of samples for initial training.')
     parser.add_argument('--fine_tuning_num_samples', type=int, default=20, help='Number of samples for initial training.')
@@ -346,6 +346,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_shift_cor', type=float, default=0.8, help='Output Cor.')
     parser.add_argument('--muP_factor', type=float, default=1, help='Output Cor.')
     parser.add_argument('--class_shift', action='store_true', default=False)
+    parser.add_argument('--shift_x', type=float, default=1, help='Shift X')
 
     parser.add_argument('--seed', type=int, default=123, help='seed')
     parser.add_argument('--wandb', action='store_true', default=False)
