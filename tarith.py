@@ -87,14 +87,14 @@ def val(epoch, prefix = '', task_index = 0, phase = 0):
         min_validation_loss[task_index]=test_loss
 
     if args.wandb:
-        log = {prefix+'epoch': epoch,
+        log = {'epoch': epoch,
                prefix+'iteration': epoch * dataset.num_steps_per_epoch,
                prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
                prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy,
                prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc[task_index],
                prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss[task_index]}
         wandb.log(log)
-        log = {prefix+'epoch': epoch,
+        log = {'epoch': epoch,
                'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
                'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy}
         wandb.log(log)
@@ -132,14 +132,14 @@ def trainloss_all(epoch, prefix = '', task_index = 0, phase=0):
         min_train_loss_all[task_index]=train_loss
 
     if args.wandb:
-        log = {prefix+'epoch': epoch,
+        log = {'epoch': epoch,
                prefix+'iteration': (epoch) * dataset.num_steps_per_epoch,
                prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
                prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy,
                prefix+'task' + str(task_index) +'_max_train_acc_all':max_train_acc_all[task_index],
                prefix+'task' + str(task_index) +'_min_train_loss_all':min_train_loss_all[task_index]}
         wandb.log(log)
-        log = {prefix+'epoch': epoch ,
+        log = {'epoch': epoch ,
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy}
         wandb.log(log)
@@ -191,7 +191,7 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
                 max_train_acc[task_index]=acc
             if loss<min_train_loss[task_index]:
                 min_train_loss[task_index]=loss
-            log = {prefix+'epoch': epoch,
+            log = {'epoch': epoch,
                    prefix+'iteration': (epoch-1) * dataset_num_steps_per_epoch+batch_idx,
                    prefix+'task'+str(task_index) +'_train_loss': float(loss),
                    prefix+'task'+str(task_index) +'_train_accuracy': float(acc),
@@ -293,7 +293,7 @@ def log_h_delta(epoch, prefix = ''):
         h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
         dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
     if args.wandb:
-        log = {prefix + 'epoch': epoch,
+        log = {'epoch': epoch,
                prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
                prefix + 'h/':h_norm_dict,
                prefix + 'dh/': dh_norm_dict,}
@@ -782,6 +782,7 @@ if __name__=='__main__':
     model_2_diff = {name: models[1].state_dict()[name] - initial_state_dict[name] for name in initial_state_dict}
     combined_weights = {name: initial_state_dict[name] + model_1_diff[name] + model_2_diff[name] for name in initial_state_dict}
     pretrained_model.load_state_dict(combined_weights)
+    model = pretrained_model
     val(0, 'TaskArithmetic', task_index=0, phase='arithmetic')
     val(0, 'TaskArithmetic', task_index=1, phase='arithmetic')
 
