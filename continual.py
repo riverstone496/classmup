@@ -73,7 +73,7 @@ def val(epoch, prefix = '', task_index = 0, phase = 0):
         for data, target in dataset.val_loader[task_index]:
             data, target = data.to(device), target.to(device)
             if task_index == 1:
-                target -= dataset.num_classes // 2
+                target -= args.task1_class
             output = model(data, task_index)
             test_loss += F.cross_entropy(output, target, reduction='sum').item()
             pred = output.argmax(dim=1, keepdim=True)
@@ -117,7 +117,7 @@ def trainloss_all(epoch, prefix = '', task_index = 0, phase=0):
         for data, target in dataset.train_val_loader[task_index]:
             data, target = data.to(device), target.to(device)
             if task_index == 1:
-                target -= dataset.num_classes // 2
+                target -= args.task1_class
             output = model(data, task_index)
             train_loss += F.cross_entropy(output, target).item()
             pred = output.argmax(dim=1, keepdim=True)
@@ -163,7 +163,7 @@ def train(epoch, prefix = '', train_iterations=-1, task_index = 0, phase=0):
         if args.loss_type=='cross_entropy':
             loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
             if task_index == 1:
-                t -= dataset.num_classes // 2
+                t -= args.task1_class
             t2= t
         elif args.loss_type=='mse':
             loss_func = torch.nn.MSELoss()
@@ -336,6 +336,37 @@ def muP_set(args):
             args.c_input=0
             args.c_hidden=0
     if args.parametrization == 'UP':
+        args.output_nonzero = True
+        if args.optim == 'sgd':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=1
+            args.c_input=0
+        if 'kfac' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+        if args.optim == 'shampoo':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1/2
+            args.c_hidden=1/2
+            args.c_input=0
+        if 'foof' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+    if args.parametrization == 'UP_output_zero':
+        args.output_nonzero = False
         if args.optim == 'sgd':
             args.b_output=1/2
             args.b_hidden=1/2
@@ -496,6 +527,8 @@ if __name__=='__main__':
                         help='train_acc_stop (default: 20)')
     parser.add_argument('--lp_epochs', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
+    parser.add_argument('--lp_epochs_2', type=int, default=None,
+                        help='number of iterations to train head (default: 0)')
     parser.add_argument('--lp_iterations', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -618,7 +651,6 @@ if __name__=='__main__':
 
     args.lr1 = args.learning_rate1
     args.lr2 = args.learning_rate2
-    args.head_init_epochs = args.lp_epochs
     args.head_init_iterations = args.lp_iterations
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -702,6 +734,8 @@ if __name__=='__main__':
             warmup_epochs = args.warmup_epochs2
             args.scheduler = 'Constant'
             args.parametrization = args.task2_parametrization
+            if args.lp_epochs_2 != None:
+                args.lp_epochs = args.lp_epochs_2
         muP_set(args)
         # Head_Init_Iters
         if args.log_weight_delta:
