@@ -588,6 +588,7 @@ if __name__=='__main__':
     parser.add_argument('--train_size', type=int, default=-1)
 
     parser.add_argument('--widen_factor', type=int, default=4)
+    parser.add_argument('--task1_class', type=int, default=5)
     parser.add_argument('--loss_type', type=str, default='cross_entropy')
 
     parser.add_argument('--log_record', action='store_true', default=False)

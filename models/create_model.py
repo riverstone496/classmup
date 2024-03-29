@@ -142,21 +142,23 @@ class MultiHeadModel(nn.Module):
             self.base_model.head = nn.Identity()  # 元のheadを除去
         elif hasattr(self.base_model, 'fc'):
             self.base_model.fc = nn.Identity()  # 元のheadを除去
-        self.head1 = nn.Linear(self.base_model.num_features, num_classes//2)  # Task 1のhead
-        self.head2 = nn.Linear(self.base_model.num_features, num_classes//2)  # Task 2のhead
+        elif hasattr(self.base_model, 'output_layer'):
+            self.base_model.output_layer = nn.Identity()  # 元のheadを除去
+        self.head1 = nn.Linear(self.base_model.num_features, args.task1_class)  # Task 1のhead
+        self.head2 = nn.Linear(self.base_model.num_features, num_classes - args.task1_class)  # Task 2のhead
 
         if 'zero' in args.task1_parametrization:
             nn.init.zeros_(self.head1.weight.data)
         else:
             nn.init.kaiming_normal_(self.head1.weight.data, a=1, mode='fan_in')
             if 'muP' in args.task1_parametrization or 'Spectral' in args.task1_parametrization:
-                self.head1.weight.data /= (self.base_model.num_features / (num_classes//2))**(1/2)
+                self.head1.weight.data /= (self.base_model.num_features / (args.task1_class))**(1/2)
         if 'zero' in args.task2_parametrization:
             nn.init.zeros_(self.head2.weight.data)
         else:
             nn.init.kaiming_normal_(self.head2.weight.data, a=1, mode='fan_in')
             if 'muP' in args.task2_parametrization or 'Spectral' in args.task2_parametrization:
-                self.head2.weight.data /= (self.base_model.num_features / (num_classes//2))**(1/2)            
+                self.head2.weight.data /= (self.base_model.num_features / (num_classes - args.task1_class))**(1/2)            
 
     def forward(self, x, task):
         x = self.base_model(x)

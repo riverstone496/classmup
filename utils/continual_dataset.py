@@ -127,7 +127,7 @@ class CIFAR10(Dataset):
         self.num_classes = 10
         self.num_channels = 3
         self.img_size = 32
-        self.task_classes = [list(range(5)),list(range(5,10))]
+        self.task_classes = [list(range(args.task1_class)),list(range(args.task1_class,10))]
         print('Start create transform')
         self.create_transform(args)
         print('Finish create transform')

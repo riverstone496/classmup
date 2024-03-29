@@ -24,6 +24,7 @@ class MLP(nn.Module):
         self.input_layer.base_fan_out = 64
         self.hidden_layer.base_fan_out = 64
         self.output_layer.base_fan_out = num_classes
+        self.num_features = n_hid
 
     def forward(self, x: torch.Tensor):
         x = x.view(x.size(0), -1)
