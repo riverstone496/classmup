@@ -155,7 +155,9 @@ class CIFAR10(Dataset):
         self.train_val_loader = []
         self.val_loader = []
 
-        for classes in self.task_classes:
+        for class_idx, classes in enumerate(self.task_classes):
+            if class_idx == 1 and args.train_size_2 is not None:
+                args.train_size = args.train_size_2
             task_trainset = TaskSubset(self.train_dataset_all, classes)
             task_train_val_set = TaskSubset(self.train_val_dataset_all, classes)
             task_valset = TaskSubset(self.val_dataset_all, classes)

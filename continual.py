@@ -600,6 +600,7 @@ if __name__=='__main__':
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
     parser.add_argument('--scheduler', type=str, default=None)
+    parser.add_argument('--scheduler_2', type=str, default='Constant')
     parser.add_argument('--sched_power', type=float, default=1,
                         help='sched_power')
     parser.add_argument('--warmup_epochs1', type=int, default=0,
@@ -623,6 +624,7 @@ if __name__=='__main__':
                         help='how many batches to wait before logging training status')
     parser.add_argument('--num_workers', type=int, default=3)
     parser.add_argument('--train_size', type=int, default=-1)
+    parser.add_argument('--train_size_2', type=int, default=None)
 
     parser.add_argument('--widen_factor', type=int, default=4)
     parser.add_argument('--task1_class', type=int, default=5)
@@ -738,7 +740,7 @@ if __name__=='__main__':
         elif task_num==1:
             learning_rate = args.learning_rate2
             warmup_epochs = args.warmup_epochs2
-            args.scheduler = 'Constant'
+            args.scheduler = args.scheduler_2
             args.parametrization = args.task2_parametrization
             if args.lp_epochs_2 != None:
                 args.lp_epochs = args.lp_epochs_2

@@ -1,6 +1,4 @@
 import torch
-
-import torch
 from torch.optim import SGD, Adam
 
 def create_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
@@ -15,6 +13,7 @@ def create_optimizer(args, model, lr, input_lr_const=1, output_lr_const=1):
             layer_lr *= output_lr_const * (args.base_width / args.width) ** args.c_output
         else:
             layer_lr *= (args.base_width / args.width) ** args.c_hidden
+        print(f"{name} 's learning rate = {layer_lr}")
         param_groups.append({'params': param, 'lr': layer_lr})
     # オプティマイザの選択と初期化
     if args.optim == 'sgd':
