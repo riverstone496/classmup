@@ -49,7 +49,7 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
                 train_accuracy=trainloss_all(epoch, prefix, task_index=i, phase=task_index)
                 nantf = val(epoch, prefix, task_index=i, phase=task_index)
             if args.log_h_delta:
-                log_h_delta(epoch, prefix)
+                log_h_delta(epoch, prefix, phase=task_index)
             if nantf:
                 break
             if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
@@ -57,12 +57,14 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
                 break
     prev_epochs[prefix] += epoch
     print(f'total_train_time: {total_train_time:.2f}s')
-    print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
-    print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
+    if args.epochs!= 0 :
+        print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
+        print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
     if args.wandb:
         wandb.run.summary['total_train_time'] = total_train_time
-        wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
-        wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
+        if args.epochs != 0:
+            wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
+            wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
 
 def val(epoch, prefix = '', task_index = 0, phase = 0):
     global max_validation_acc,min_validation_loss
@@ -283,7 +285,7 @@ def layer_weight_norm(epoch, model, prefix = ''):
     if args.wandb:
         wandb.log(log)
 
-def log_h_delta(epoch, prefix = ''):
+def log_h_delta(epoch, prefix = '', phase = ''):
     pre_act_dict = fetch_h(model)
     h_norm_dict = {}
     dh_norm_dict = {}
@@ -293,8 +295,8 @@ def log_h_delta(epoch, prefix = ''):
     if args.wandb:
         log = {prefix + 'epoch': epoch,
                prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
-               prefix + 'h/':h_norm_dict,
-               prefix + 'dh/': dh_norm_dict,}
+               'task'+str(phase)+ '_' + prefix + 'h/':h_norm_dict,
+               'task'+str(phase)+ '_' + prefix + 'dh/': dh_norm_dict,}
         wandb.log(log)
 
 class ParseAction(argparse.Action):
@@ -523,6 +525,8 @@ if __name__=='__main__':
                         help='input batch size for training (default: 128)')
     parser.add_argument('--epochs', type=int, default=20,
                         help='number of epochs to train (default: 20)')
+    parser.add_argument('--epochs_2', type=int, default=None,
+                        help='number of epochs to train (default: 20)')
     parser.add_argument('--train_acc_stop', type=float, default=None,
                         help='train_acc_stop (default: 20)')
     parser.add_argument('--lp_epochs', type=int, default=-1,
@@ -714,10 +718,12 @@ if __name__=='__main__':
         args.task2_parametrization = args.task1_parametrization
 
     for task_num in range(2):
+        if task_num ==0 and args.epochs == 0:
+            continue
         if task_num == 1:
             model.disable_head1_grad()
         if task_num == 0 and args.resume_ckpo_folder is not None:
-            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
+            file_name = str(args.model) + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) +'_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
             folder_path = os.path.join(args.resume_ckpo_folder, file_name)
             if os.path.isfile(folder_path):
                 checkpoint = torch.load(folder_path)
@@ -736,6 +742,8 @@ if __name__=='__main__':
             args.parametrization = args.task2_parametrization
             if args.lp_epochs_2 != None:
                 args.lp_epochs = args.lp_epochs_2
+            if args.epochs_2 != None:
+                args.epochs = args.epochs_2
         muP_set(args)
         # Head_Init_Iters
         if args.log_weight_delta:
@@ -788,7 +796,7 @@ if __name__=='__main__':
             print(e)
 
         if task_num == 0 and args.resume_ckpo_folder is not None:
-            file_name = str(args.model) + '_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
+            file_name = str(args.model) + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) +'_hp_' + str(args.lp_epochs) + '_' + str(args.task1_parametrization) + '_ep' + str(args.epochs) + '_lr1_' + str(args.learning_rate1) + '.pt'
             folder_path = os.path.join(args.resume_ckpo_folder, file_name)
             torch.save({
                         'model_state_dict': model.state_dict(),
