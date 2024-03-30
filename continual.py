@@ -40,7 +40,7 @@ def main(epochs, iterations = -1, prefix = '', task_index = 0):
         train_accuracy=trainloss_all(epoch, prefix, task_index=i, phase=task_index)
         nantf = val(epoch, prefix, task_index=i, phase=task_index)
     for epoch in range(1, epochs + 1):
-        epoch += task_index * prev_epochs[prefix]
+        #epoch += task_index * prev_epochs[prefix]
         start = time.time()
         train(epoch, prefix, iterations, task_index=task_index)
         total_train_time += time.time() - start
@@ -94,7 +94,7 @@ def val(epoch, prefix = '', task_index = 0, phase = 0):
                prefix+'task'+ str(task_index)+ '_max_validation_acc':max_validation_acc[task_index],
                prefix+'task'+ str(task_index)+ '_min_validation_loss':min_validation_loss[task_index]}
         wandb.log(log)
-        log = {prefix+'epoch': epoch - prev_epochs[prefix],
+        log = {prefix+'epoch': epoch,
                'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_loss': test_loss,
                'task'+str(phase)+'/'+prefix+'task'+ str(task_index)+ '_val_accuracy': test_accuracy}
         wandb.log(log)
@@ -139,7 +139,7 @@ def trainloss_all(epoch, prefix = '', task_index = 0, phase=0):
                prefix+'task' + str(task_index) +'_max_train_acc_all':max_train_acc_all[task_index],
                prefix+'task' + str(task_index) +'_min_train_loss_all':min_train_loss_all[task_index]}
         wandb.log(log)
-        log = {prefix+'epoch': epoch - prev_epochs[prefix],
+        log = {prefix+'epoch': epoch,
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_loss_all': train_loss,
                'task'+str(phase)+'/'+prefix+'task' + str(task_index) +'_train_accuracy_all': train_accuracy}
         wandb.log(log)
