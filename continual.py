@@ -30,7 +30,9 @@ min_train_loss={0:np.inf, 1:np.inf}
 max_train_acc_all={0:0, 1:0}
 min_train_loss_all={0:np.inf, 1:np.inf}
 prev_epochs = {'init_':0, '':0}
-os.environ["WANDB_HOST"] = os.environ.get('SLURM_JOBID')
+job_id = os.environ.get('SLURM_JOBID')
+if job_id is not None:
+    os.environ["WANDB_HOST"] = job_id
 
 def main(epochs, iterations = -1, prefix = '', task_index = 0):
     global task0_epoch

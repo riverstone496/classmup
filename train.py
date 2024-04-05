@@ -31,7 +31,9 @@ min_train_loss=np.inf
 max_train_acc_all=0
 min_train_loss_all=np.inf
 
-os.environ["WANDB_HOST"] = os.environ.get('SLURM_JOBID')
+job_id = os.environ.get('SLURM_JOBID')
+if job_id is not None:
+    os.environ["WANDB_HOST"] = job_id
 
 def main(epochs, iterations = -1, prefix = ''):
     total_train_time=0
@@ -612,7 +614,9 @@ if __name__=='__main__':
     print(args)
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
-    args.job_id = os.environ.get('SLURM_JOBID')
+    job_id = os.environ.get('SLURM_JOBID')
+    if job_id is not None:
+        args.job_id = job_id
     cudnn.benchmark = True  # Should make training should go faster for large models
     config = vars(args).copy()
 
