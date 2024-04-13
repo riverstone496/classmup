@@ -473,6 +473,15 @@ def muP_set(args):
     if args.parametrization == 'Spectral_output_zero':
         args.output_nonzero = False
 
+def permute_classwise(mnist, class_permutations, img_size, num_classes):
+    """ 各クラスごとに異なるパーミュテーションを適用する """
+    permuted_data = mnist.data.clone()
+    for i in range(num_classes):  # 10 classes
+        indices = (mnist.targets == i)
+        perm = class_permutations[i]
+        permuted_data[indices] = mnist.data[indices].view(-1, img_size**2)[:, perm].view(-1, img_size, img_size)
+    return permuted_data
+
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', '-d', default='MNIST',
@@ -495,7 +504,7 @@ if __name__=='__main__':
                         help='input batch size for training (default: 128)')
     parser.add_argument('--epochs', type=int, default=20,
                         help='number of epochs to train (default: 20)')
-    parser.add_argument('--pretrained_epochs', type=int, default=20,
+    parser.add_argument('--pretrained_epochs', type=int, default=100,
                         help='number of epochs to train (default: 20)')
     parser.add_argument('--head_init_epochs', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
@@ -536,7 +545,7 @@ if __name__=='__main__':
     parser.add_argument('--optim', default='sgd')
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
                         help='file location to load base shapes from')
-    parser.add_argument('--ckpt_folder', type=str, default=None)
+    parser.add_argument('--ckpt_folder', type=str, default='./ckpts/premutate_mlp_mnist/')
 
     parser.add_argument('--b_input', type=float, default=0.5,
                         help='learning rate')
@@ -593,10 +602,6 @@ if __name__=='__main__':
     parser.add_argument('--pretrained_train_size', type=int, default=-1)
 
     parser.add_argument('--widen_factor', type=int, default=4)
-
-    parser.add_argument('--ckpt_path', type=str, default='./ckpt/mlp/')
-    parser.add_argument('--ckpt_interval', type=int, default=10)
-
     parser.add_argument('--loss_type', type=str, default='cross_entropy')
 
     parser.add_argument('--log_record', action='store_true', default=False)
@@ -614,10 +619,10 @@ if __name__=='__main__':
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
     parser.add_argument('--rotation_angle', type=float, default=0)
+    parser.add_argument('--permutate', action='store_true', default=False)
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
-    parser.add_argument('--dataset_rotate', action='store_true', default=False)
 
     parser.add_argument('--config', default=None,
                         help='config file path')
@@ -664,6 +669,13 @@ if __name__=='__main__':
     elif args.dataset == 'FashionMNIST':
         pretrained_dataset = utils.dataset.FashionMNIST(args=args)
         dataset = utils.dataset.FashionMNIST(args=args, rotation_angle=args.rotation_angle)
+
+    if args.permutate:
+        np.random.seed(args.seed)
+        class_permutations = [np.random.permutation(dataset.img_size*dataset.img_size) for _ in range(dataset.num_classes)]
+        dataset.train_dataset.data = permute_classwise(dataset.train_dataset, class_permutations, dataset.img_size, dataset.num_classes)
+        dataset.train_val_dataset.data = permute_classwise(dataset.train_val_dataset, class_permutations, dataset.img_size, dataset.num_classes)
+        dataset.val_dataset.data = permute_classwise(dataset.val_dataset, class_permutations, dataset.img_size, dataset.num_classes)
 
     dataset_original_class = dataset.num_classes
     if args.class_scaling:
