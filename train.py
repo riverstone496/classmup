@@ -743,7 +743,7 @@ if __name__=='__main__':
         print(e)
     
     if args.save_ckpt:
-        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) + '_param_' + str(args.parametrization) + '_ep_' + str(args.epochs) + '_lr_' + str(args.lr) + '.pt'
+        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) + '_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.lr) + '.pt'
         folder_path = os.path.join(args.ckpt_folder, file_name)
         log_dict = {'max_validation_acc':max_validation_acc,
                     'max_train_acc_all':max_train_acc_all}
