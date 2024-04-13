@@ -42,11 +42,14 @@ def main(epochs, iterations = -1, prefix = ''):
         train(epoch, prefix, iterations)
         total_train_time += time.time() - start
         if (epoch-1)%args.log_val_interval==0:
-            trainloss_all(epoch, prefix)
+            train_accuracy = trainloss_all(epoch, prefix)
             nantf = val(epoch, prefix)
             if args.log_h_delta:
                 log_h_delta(epoch, prefix)
             if nantf:
+                break
+            if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
+                wandb.run.summary['total_epochs_task'] = epoch
                 break
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
@@ -133,7 +136,7 @@ def trainloss_all(epoch, prefix = ''):
     if math.isnan(train_loss):
         print('Error: Train loss is nan', file=sys.stderr)
         return True
-    return False
+    return train_accuracy
 
 def train(epoch, prefix = '', train_iterations=-1):
     global max_train_acc,min_train_loss
@@ -487,6 +490,8 @@ if __name__=='__main__':
                         help='input batch size for training (default: 128)')
     parser.add_argument('--epochs', type=int, default=20,
                         help='number of epochs to train (default: 20)')
+    parser.add_argument('--train_acc_stop', type=float, default=None,
+                        help='train_acc_stop (default: 20)')
     parser.add_argument('--head_init_epochs', type=int, default=-1,
                         help='number of iterations to train head (default: 0)')
     parser.add_argument('--head_init_iterations', type=int, default=-1,
@@ -559,6 +564,7 @@ if __name__=='__main__':
                         help='sched_power')
     
     parser.add_argument('--save_ckpt', action='store_true', default=False)
+    parser.add_argument('--ckpt_folder', type=str, default=None)
 
     parser.add_argument('--log_interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
@@ -735,5 +741,16 @@ if __name__=='__main__':
         main(epochs=args.epochs, iterations=-1, prefix='')
     except ValueError as e:
         print(e)
+    
+    if args.save_ckpt:
+        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) + '_param_' + str(args.parametrization) + '_ep_' + str(args.epochs) + '_lr_' + str(args.lr) + '.pt'
+        folder_path = os.path.join(args.ckpt_folder, file_name)
+        log_dict = {'max_validation_acc':max_validation_acc,
+                    'max_train_acc_all':max_train_acc_all}
+        torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'log_dict':log_dict
+                    }, folder_path)
     
     wandb.finish()
