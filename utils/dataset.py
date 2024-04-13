@@ -65,12 +65,14 @@ class Dataset(object):
         return Subset(dataset, indices)
 
 class MNIST(Dataset):
-    def __init__(self, args):
+    def __init__(self, args, rotation_angle=0):
         self.num_classes = 10
         self.num_channels=1
         self.img_size = 28
 
         self.train_transform = transforms.Compose([])
+        if rotation_angle>0:
+            self.train_transform.transforms.append(transforms.RandomRotation((rotation_angle, rotation_angle)))
         self.train_transform.transforms.append(transforms.ToTensor())
         self.train_transform.transforms.append(transforms.Normalize((0.1307,), (0.3081,)))
         self.val_transform = transforms.Compose([
@@ -101,13 +103,16 @@ class MNIST(Dataset):
         super().__init__(args)
 
 class FashionMNIST(Dataset):
-    def __init__(self, args):
+    def __init__(self, args, rotation_angle=0):
         self.num_classes = 10
         self.img_size = 28
         self.num_channels = 1
 
         self.train_transform = transforms.Compose([])
-        self.train_transform.transforms.append(transforms.RandomAffine([-15,15], scale=(0.8, 1.2)))
+        if args.RandomAffine:
+            self.train_transform.transforms.append(transforms.RandomAffine([-15,15], scale=(0.8, 1.2)))
+        if rotation_angle>0:
+            self.train_transform.transforms.append(transforms.RandomRotation((rotation_angle, rotation_angle)))
         self.train_transform.transforms.append(transforms.ToTensor())
         self.train_transform.transforms.append(transforms.Normalize((0.1307,), (0.3081,)))
         self.val_transform = transforms.Compose([

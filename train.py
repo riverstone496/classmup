@@ -593,6 +593,7 @@ if __name__=='__main__':
     parser.add_argument('--use_timm', action='store_true', default=False,
                         help='enables CUDA training')
     parser.add_argument('--wandb', action='store_false', default=True)
+    parser.add_argument('--RandomAffine', action='store_true', default=False)
 
     parser.add_argument('--withoutShortcut', action='store_true', default=False)
     parser.add_argument('--withoutBN', action='store_true', default=False)
