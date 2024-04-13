@@ -95,8 +95,8 @@ def val(epoch, dataset, prefix = ''):
                prefix + 'max_validation_acc':max_validation_acc,
                prefix + 'min_validation_loss':min_validation_loss}
         wandb.log(log)
-    print('Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        test_loss, correct, len(dataset.val_loader.dataset), test_accuracy))
+    print('Epoch {:.0f} = Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        epoch, test_loss, correct, len(dataset.val_loader.dataset), test_accuracy))
 
     if math.isnan(test_loss):
         print('Error: Train loss is nan', file=sys.stderr)
@@ -135,8 +135,8 @@ def trainloss_all(epoch, dataset, prefix = ''):
                prefix + 'max_train_acc_all':max_train_acc_all,
                prefix + 'min_train_loss_all':min_train_loss_all}
         wandb.log(log)
-    print('Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        train_loss, correct, len(dataset.val_loader.dataset), train_accuracy))
+    print('Epoch {:.0f} = Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        epoch, train_loss, correct, len(dataset.val_loader.dataset), train_accuracy))
 
     if math.isnan(train_loss):
         print('Error: Train loss is nan', file=sys.stderr)
