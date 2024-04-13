@@ -50,11 +50,14 @@ def main(epochs, iterations = -1, prefix = ''):
         total_train_time += time.time() - start
         trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_')
         val(epoch, pretrained_dataset, prefix+'pretrained_')
-        trainloss_all(epoch, dataset, prefix)
+        train_accuracy = trainloss_all(epoch, dataset, prefix)
         nantf = val(epoch, dataset, prefix)
         if args.log_h_delta:
             log_h_delta(epoch, prefix)
         if nantf:
+            break
+        if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
+            wandb.run.summary['total_epochs_task'] = epoch
             break
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
@@ -141,7 +144,7 @@ def trainloss_all(epoch, dataset, prefix = ''):
     if math.isnan(train_loss):
         print('Error: Train loss is nan', file=sys.stderr)
         return True
-    return False
+    return train_accuracy
 
 def train(epoch, prefix = '', train_iterations=-1):
     global max_train_acc,min_train_loss
@@ -504,6 +507,8 @@ if __name__=='__main__':
                         help='input batch size for training (default: 128)')
     parser.add_argument('--epochs', type=int, default=20,
                         help='number of epochs to train (default: 20)')
+    parser.add_argument('--train_acc_stop', type=float, default=None,
+                        help='train_acc_stop (default: 20)')
     parser.add_argument('--pretrained_epochs', type=int, default=100,
                         help='number of epochs to train (default: 20)')
     parser.add_argument('--head_init_epochs', type=int, default=-1,

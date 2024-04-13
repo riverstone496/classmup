@@ -71,13 +71,14 @@ class MNIST(Dataset):
         self.img_size = 28
 
         self.train_transform = transforms.Compose([])
+        self.val_transform = transforms.Compose([])
         if rotation_angle>0:
             self.train_transform.transforms.append(transforms.RandomRotation((rotation_angle, rotation_angle)))
+            self.val_transform.transforms.append(transforms.RandomRotation((rotation_angle, rotation_angle)))
         self.train_transform.transforms.append(transforms.ToTensor())
         self.train_transform.transforms.append(transforms.Normalize((0.1307,), (0.3081,)))
-        self.val_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))])
+        self.val_transform.transforms.append(transforms.ToTensor())
+        self.val_transform.transforms.append(transforms.Normalize((0.1307,), (0.3081,)))
 
         self.train_dataset = torchvision.datasets.MNIST(root='data/',
                                             train=True,
