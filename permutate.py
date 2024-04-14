@@ -476,13 +476,13 @@ def muP_set(args):
     if args.parametrization == 'Spectral_output_zero':
         args.output_nonzero = False
 
-def permute_classwise(mnist, class_permutations, img_size, num_classes):
+def permute_classwise(dataset, class_permutations, img_size, num_classes):
     """ 各クラスごとに異なるパーミュテーションを適用する """
-    permuted_data = mnist.data.clone()
+    permuted_data = dataset.data.clone()
     for i in range(num_classes):  # 10 classes
-        indices = (mnist.targets == i)
+        indices = (dataset.targets == i)
         perm = class_permutations[i]
-        permuted_data[indices] = mnist.data[indices].view(-1, img_size**2)[:, perm].view(-1, img_size, img_size)
+        permuted_data[indices] = dataset.data[indices].view(-1, img_size**2)[:, perm].view(-1, img_size, img_size)
     return permuted_data
 
 if __name__=='__main__':
@@ -674,6 +674,9 @@ if __name__=='__main__':
     elif args.dataset == 'FashionMNIST':
         pretrained_dataset = utils.dataset.FashionMNIST(args=args)
         dataset = utils.dataset.FashionMNIST(args=args, rotation_angle=args.rotation_angle)
+    elif args.dataset == 'CIFAR10':
+        pretrained_dataset = utils.dataset.CIFAR10(args=args)
+        dataset = utils.dataset.CIFAR10(args=args, rotation_angle=args.rotation_angle)
 
     if args.permutate:
         np.random.seed(args.seed)
