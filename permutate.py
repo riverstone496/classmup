@@ -476,15 +476,6 @@ def muP_set(args):
     if args.parametrization == 'Spectral_output_zero':
         args.output_nonzero = False
 
-def permute_classwise(dataset, class_permutations, img_size, num_classes):
-    """ 各クラスごとに異なるパーミュテーションを適用する """
-    permuted_data = dataset.data.clone()
-    for i in range(num_classes):  # 10 classes
-        indices = (dataset.targets == i)
-        perm = class_permutations[i]
-        permuted_data[indices] = dataset.data[indices].view(-1, img_size**2)[:, perm].view(-1, img_size, img_size)
-    return permuted_data
-
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', '-d', default='MNIST',
@@ -670,20 +661,13 @@ if __name__=='__main__':
 
     if args.dataset == 'MNIST':
         pretrained_dataset = utils.dataset.MNIST(args=args)
-        dataset = utils.dataset.MNIST(args=args, rotation_angle=args.rotation_angle)
+        dataset = utils.dataset.MNIST(args=args, rotation_angle=args.rotation_angle, permutate=args.permutate)
     elif args.dataset == 'FashionMNIST':
         pretrained_dataset = utils.dataset.FashionMNIST(args=args)
         dataset = utils.dataset.FashionMNIST(args=args, rotation_angle=args.rotation_angle)
     elif args.dataset == 'CIFAR10':
         pretrained_dataset = utils.dataset.CIFAR10(args=args)
         dataset = utils.dataset.CIFAR10(args=args, rotation_angle=args.rotation_angle)
-
-    if args.permutate:
-        np.random.seed(args.seed)
-        class_permutations = [np.random.permutation(dataset.img_size*dataset.img_size) for _ in range(dataset.num_classes)]
-        dataset.train_dataset.data = permute_classwise(dataset.train_dataset, class_permutations, dataset.img_size, dataset.num_classes)
-        dataset.train_val_dataset.data = permute_classwise(dataset.train_val_dataset, class_permutations, dataset.img_size, dataset.num_classes)
-        dataset.val_dataset.data = permute_classwise(dataset.val_dataset, class_permutations, dataset.img_size, dataset.num_classes)
 
     dataset_original_class = dataset.num_classes
     if args.class_scaling:

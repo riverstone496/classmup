@@ -8,6 +8,16 @@ from torch.utils.data.dataset import Subset
 from torchvision import transforms
 from utils.cutout import Cutout
 from .autoaugment import CIFAR10Policy
+
+def permute_classwise(dataset, class_permutations, img_size, num_classes):
+    """ 各クラスごとに異なるパーミュテーションを適用する """
+    permuted_data = dataset.data.clone()
+    for i in range(num_classes):  # 10 classes
+        indices = (dataset.targets == i)
+        perm = class_permutations[i]
+        permuted_data[indices] = dataset.data[indices].view(-1, img_size**2)[:, perm].view(-1, img_size, img_size)
+    return permuted_data
+
 class Dataset(object):
     def __init__(self, args):
         # Data Loader (Input Pipeline)
@@ -65,7 +75,7 @@ class Dataset(object):
         return Subset(dataset, indices)
 
 class MNIST(Dataset):
-    def __init__(self, args, rotation_angle=0):
+    def __init__(self, args, rotation_angle=0, permutate=False):
         self.num_classes = 10
         self.num_channels=1
         self.img_size = 28
@@ -93,6 +103,13 @@ class MNIST(Dataset):
                                             transform=self.val_transform,
                                             download=True)
         
+        if permutate:
+            np.random.seed(args.seed)
+            class_permutations = [np.random.permutation(self.img_size*self.img_size) for _ in range(self.num_classes)]
+            self.train_dataset.data = permute_classwise(self.train_dataset, class_permutations, self.img_size, self.num_classes)
+            self.train_val_dataset.data = permute_classwise(self.train_val_dataset, class_permutations, self.img_size, self.num_classes)
+            self.val_dataset.data = permute_classwise(self.val_dataset, class_permutations, self.img_size, self.num_classes)
+
         ## split dataset
         if args.train_size != -1:
             indices = list(range(len(self.train_dataset)))
