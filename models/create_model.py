@@ -160,7 +160,7 @@ class MultiHeadModel(nn.Module):
             if 'muP' in args.task2_parametrization or 'Spectral' in args.task2_parametrization:
                 self.head2.weight.data /= (self.base_model.num_features / (num_classes - args.task1_class))**(1/2)            
 
-    def forward(self, x, task):
+    def forward(self, x, task=0):
         x = self.base_model(x)
         if task == 0:
             x = self.head1(x)

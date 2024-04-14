@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 import os,json
 import utils.dataset
-from models.create_model import create_model,initialize_weight, create_finetune_model
+from models.create_model import create_model,initialize_weight, create_finetune_model, MultiHeadModel
 from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
@@ -601,6 +601,7 @@ if __name__=='__main__':
     parser.add_argument('--real_class_scaling', action='store_true', default=False)
     parser.add_argument('--class_bulk', action='store_true', default=False)
     parser.add_argument('--finetuning', action='store_true', default=False)
+    parser.add_argument('--multihead', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
@@ -690,6 +691,9 @@ if __name__=='__main__':
         args.batch_size=args.pseudo_batch_size
     if args.finetuning:
         model = create_finetune_model(dataset.num_classes, args).to(device=device)
+    elif args.multihead:
+        args.task1_parametrization = args.parametrization
+        model = MultiHeadModel(args, dataset.num_classes)
     else:
         model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
