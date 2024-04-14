@@ -74,6 +74,17 @@ class Dataset(object):
         indices = [i for i in range(len(dataset)) if dataset.targets[i] in class_indices]
         return Subset(dataset, indices)
 
+class TaskSubset(Dataset):
+    def __init__(self, dataset, classes):
+        self.dataset = dataset
+        self.indices = [i for i, (_, label) in enumerate(dataset) if label in classes]
+
+    def __getitem__(self, idx):
+        return self.dataset[self.indices[idx]]
+
+    def __len__(self):
+        return len(self.indices)
+
 class MNIST(Dataset):
     def __init__(self, args, rotation_angle=0, permutate=False):
         self.num_classes = 10
@@ -159,7 +170,7 @@ class FashionMNIST(Dataset):
         super().__init__(args)
 
 class CIFAR10(Dataset):
-    def __init__(self, args):
+    def __init__(self, args, task_classes=None):
         self.num_classes = 10
         self.num_channels = 3
         self.img_size = 32
@@ -183,6 +194,11 @@ class CIFAR10(Dataset):
                                             train=False,
                                             download=True,
                                             transform=self.val_transform)
+        
+        if task_classes is not None:
+            self.train_dataset = TaskSubset(self.train_dataset, task_classes)
+            self.train_val_dataset = TaskSubset(self.train_val_dataset, task_classes)
+            self.val_dataset = TaskSubset(self.val_dataset, task_classes)
         
         ## split dataset
         if args.train_size != -1:

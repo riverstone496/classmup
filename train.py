@@ -604,6 +604,7 @@ if __name__=='__main__':
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
+    parser.add_argument('--train_classes', type=str, default=None)
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
@@ -619,6 +620,10 @@ if __name__=='__main__':
             config = json.load(f)
         dict_args.update(config)
     print(args)
+    
+    if args.train_classes is not None:
+        args.train_classes = args.train_classes.split(',')
+        args.train_classes = [int(c) for c in args.train_classes]
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     job_id = os.environ.get('SLURM_JOBID')
@@ -652,7 +657,7 @@ if __name__=='__main__':
     elif args.dataset == 'FashionMNIST':
         dataset = utils.dataset.FashionMNIST(args=args)
     elif args.dataset == 'CIFAR10':
-        dataset = utils.dataset.CIFAR10(args=args)
+        dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
     elif args.dataset == 'CIFAR100':
         dataset = utils.dataset.CIFAR100(args=args, num_classes=num_classes)
     elif args.dataset == 'STL10':
