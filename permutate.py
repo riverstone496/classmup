@@ -46,12 +46,12 @@ def main(epochs, iterations = -1, prefix = ''):
 
     for epoch in range(1, epochs + 1):
         start = time.time()
-        train(epoch, prefix, iterations)
+        train(epoch, prefix, iterations, multihead=args.multihead)
         total_train_time += time.time() - start
         trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_')
         val(epoch, pretrained_dataset, prefix+'pretrained_')
-        train_accuracy = trainloss_all(epoch, dataset, prefix)
-        nantf = val(epoch, dataset, prefix)
+        train_accuracy = trainloss_all(epoch, dataset, prefix, multihead=args.multihead)
+        nantf = val(epoch, dataset, prefix, multihead=args.multihead)
         if args.log_h_delta:
             log_h_delta(epoch, prefix)
         if nantf:
@@ -67,7 +67,7 @@ def main(epochs, iterations = -1, prefix = ''):
         wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
         wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
 
-def val(epoch, dataset, prefix = ''):
+def val(epoch, dataset, prefix = '', multihead=False):
     global max_validation_acc,min_validation_loss
     model.eval()
     test_loss = 0
@@ -75,7 +75,10 @@ def val(epoch, dataset, prefix = ''):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
-            output = model(data)
+            if multihead:
+                output = model(data, task=1)
+            else:
+                output = model(data)
             test_loss += F.cross_entropy(output, target, reduction='sum').item()
             if args.class_bulk:
                 pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
@@ -106,7 +109,7 @@ def val(epoch, dataset, prefix = ''):
         return True
     return False
 
-def trainloss_all(epoch, dataset, prefix = ''):
+def trainloss_all(epoch, dataset, prefix = '', multihead=False):
     global max_train_acc_all,min_train_loss_all
     model.eval()
     train_loss = 0
@@ -114,7 +117,10 @@ def trainloss_all(epoch, dataset, prefix = ''):
     with torch.no_grad():
         for data, target in dataset.train_val_loader:
             data, target = data.to(device), target.to(device)
-            output = model(data)
+            if multihead:
+                output = model(data, task=1)
+            else:
+                output = model(data)
             train_loss += F.cross_entropy(output, target).item()
             if args.class_bulk:
                 pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
@@ -146,7 +152,7 @@ def trainloss_all(epoch, dataset, prefix = ''):
         return True
     return train_accuracy
 
-def train(epoch, prefix = '', train_iterations=-1):
+def train(epoch, prefix = '', train_iterations=-1, multihead=False):
     global max_train_acc,min_train_loss
     optimizer.zero_grad(set_to_none=True)
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
@@ -176,7 +182,10 @@ def train(epoch, prefix = '', train_iterations=-1):
                 loss_func = torch.nn.MSELoss()
             t2 = MSE_label(x, t)
 
-        y = model(x)
+        if multihead:
+            y=model(x, task=1)
+        else:
+            y = model(x)
         loss = loss_func(y,t2)
         loss.backward()
         grad_norm = get_grad_norm(model)
@@ -566,6 +575,7 @@ if __name__=='__main__':
                         help='act')
     parser.add_argument('--norm_type', type=str, default='l1',
                         help='log_type')
+    parser.add_argument('--multihead', action='store_true', default=False)
     
     parser.add_argument('--parametrization', type=str, default='SP')
     parser.add_argument('--pretrained_parametrization', type=str, default='SP')
