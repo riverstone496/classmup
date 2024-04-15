@@ -292,21 +292,25 @@ def register_fhook(model: torch.nn.Module):
         module.register_forward_hook(forward_hook)
     return model
 
-def fetch_h(model):
+def fetch_h(model, multihead=False):
     model = register_fhook(model)
-    y = model(inputs_for_dh)
+    if multihead:
+        y = model(inputs_for_dh, task=1)
+    else:
+        y = model(inputs_for_dh)
     pre_act_dict = {}
     for name, module in model.named_modules():
         if len(list(module.children())) > 0:
               continue
         if all(not p.requires_grad for p in module.parameters()):
             continue
-        pre_act_dict[name] = module.out_data
+        if hasattr(module, 'out_data'):
+            pre_act_dict[name] = module.out_data
     return pre_act_dict
 
 def log_h_delta(epoch, prefix = ''):
     global tmp_pre_act_dict
-    pre_act_dict = fetch_h(model)
+    pre_act_dict = fetch_h(model, args.multihead)
     h_norm_dict = {}
     dh_norm_dict = {}
     int_dh_norm_dict = {}
@@ -320,7 +324,7 @@ def log_h_delta(epoch, prefix = ''):
            prefix + 'dh/': dh_norm_dict,}
     if epoch % args.log_dh_interval == 0:
         log[prefix + 'tmp_dh/'] = int_dh_norm_dict
-        tmp_pre_act_dict = fetch_h(model)
+        tmp_pre_act_dict = fetch_h(model, args.multihead)
     if args.wandb:
         wandb.log(log)
 
@@ -733,8 +737,8 @@ if __name__=='__main__':
             inputs, labels = data
             inputs_for_dh = inputs.to(device)
             break
-        init_pre_act_dict = fetch_h(model)
-        tmp_pre_act_dict  = fetch_h(model)
+        init_pre_act_dict = fetch_h(model, args.multihead)
+        tmp_pre_act_dict  = fetch_h(model, args.multihead)
     try:
         main(epochs=args.head_init_epochs, iterations=args.head_init_iterations, prefix='init_')
     except ValueError as e:
@@ -768,8 +772,8 @@ if __name__=='__main__':
             inputs, labels = data
             inputs_for_dh = inputs.to(device)
             break
-        init_pre_act_dict = fetch_h(model)
-        tmp_pre_act_dict  = fetch_h(model)
+        init_pre_act_dict = fetch_h(model, args.multihead)
+        tmp_pre_act_dict  = fetch_h(model, args.multihead)
     try:
         main(epochs=args.epochs, iterations=-1, prefix='')
     except ValueError as e:
