@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 import os,json
 import utils.dataset
-from models.create_model import create_model,initialize_weight, create_finetune_model
+from models.create_model import create_model,initialize_weight, MultiHeadModel
 from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
@@ -627,6 +627,8 @@ if __name__=='__main__':
     parser.add_argument('--rotation_angle', type=float, default=0)
     parser.add_argument('--permutate', action='store_true', default=False)
     parser.add_argument('--train_classes', type=str, default=None)
+    parser.add_argument('--task1_class', type=int, default=10)
+    parser.add_argument('--task2_class', type=int, default=10)
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
@@ -703,13 +705,23 @@ if __name__=='__main__':
 
     if args.pseudo_batch_size != -1:
         args.batch_size=args.pseudo_batch_size
-    model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
-    model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
+    
+    if args.multihead:
+        args.task1_parametrization = args.parametrization
+        args.task2_parametrization = args.parametrization
+        args.use_cifar_model = True
+        model = MultiHeadModel(args, dataset.img_size, dataset.num_classes, dataset.num_channels).to(device=device)
+    else:
+        model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
+        model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
 
     file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_param_' + str(args.pretrained_parametrization) + '_tsize_' + str(args.pretrained_train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
     folder_path = os.path.join(args.ckpt_folder, file_name)
     checkpoint = torch.load(folder_path)
     model.load_state_dict(checkpoint['model_state_dict'])
+
+    if args.multihead and 'zero' in args.parametrization:
+        torch.nn.init.zeros_(model.head2.weight)
 
     # Head_Init_Iters
     if args.log_weight_delta:
