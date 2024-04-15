@@ -130,10 +130,10 @@ def create_finetune_model(num_classes, args):
     return model
 
 class MultiHeadModel(nn.Module):
-    def __init__(self, args, num_classes):
+    def __init__(self, args, img_size, num_classes, num_channels):
         super(MultiHeadModel, self).__init__()
         if args.use_cifar_model:
-            self.base_model = create_model(32, num_classes, 3, args)
+            self.base_model = create_model(img_size, num_classes, num_channels, args)
         elif args.use_fractal_model:
             self.base_model = create_fractal_model(model_name = args.model, pretrained=True, pretrained_path=args.pretrained_path)
         else:
@@ -145,7 +145,7 @@ class MultiHeadModel(nn.Module):
         elif hasattr(self.base_model, 'output_layer'):
             self.base_model.output_layer = nn.Identity()  # 元のheadを除去
         self.head1 = nn.Linear(self.base_model.num_features, args.task1_class)  # Task 1のhead
-        self.head2 = nn.Linear(self.base_model.num_features, num_classes - args.task1_class)  # Task 2のhead
+        self.head2 = nn.Linear(self.base_model.num_features, args.task2_class)  # Task 2のhead
 
         if 'zero' in args.task1_parametrization:
             nn.init.zeros_(self.head1.weight.data)
@@ -158,7 +158,7 @@ class MultiHeadModel(nn.Module):
         else:
             nn.init.kaiming_normal_(self.head2.weight.data, a=1, mode='fan_in')
             if 'muP' in args.task2_parametrization or 'Spectral' in args.task2_parametrization:
-                self.head2.weight.data /= (self.base_model.num_features / (num_classes - args.task1_class))**(1/2)            
+                self.head2.weight.data /= (self.base_model.num_features / (args.task2_class))**(1/2)            
 
     def forward(self, x, task=0):
         x = self.base_model(x)

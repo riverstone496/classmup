@@ -52,12 +52,14 @@ def main(epochs, iterations = -1, prefix = ''):
                 wandb.run.summary['total_epochs_task'] = epoch
                 break
     print(f'total_train_time: {total_train_time:.2f}s')
-    print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
-    print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
+    if args.epochs != 0:
+        print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
+        print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
     if args.wandb:
         wandb.run.summary['total_train_time'] = total_train_time
-        wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
-        wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
+        if args.epochs != 0:
+            wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
+            wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
 
 def val(epoch, prefix = ''):
     global max_validation_acc,min_validation_loss
@@ -284,7 +286,8 @@ def fetch_h(model):
               continue
         if all(not p.requires_grad for p in module.parameters()):
             continue
-        pre_act_dict[name] = module.out_data
+        if hasattr(module, 'out_data'):
+            pre_act_dict[name] = module.out_data
     return pre_act_dict
 
 def log_h_delta(epoch, prefix = ''):
@@ -606,6 +609,8 @@ if __name__=='__main__':
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
     parser.add_argument('--train_classes', type=str, default=None)
+    parser.add_argument('--task1_class', type=int, default=10)
+    parser.add_argument('--task2_class', type=int, default=10)
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
@@ -693,7 +698,9 @@ if __name__=='__main__':
         model = create_finetune_model(dataset.num_classes, args).to(device=device)
     elif args.multihead:
         args.task1_parametrization = args.parametrization
-        model = MultiHeadModel(args, dataset.num_classes)
+        args.task2_parametrization = 'SP'
+        args.use_cifar_model = True
+        model = MultiHeadModel(args, dataset.img_size, dataset.num_classes, dataset.num_channels).to(device=device)
     else:
         model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
