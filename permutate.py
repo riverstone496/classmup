@@ -41,8 +41,8 @@ def main(epochs, iterations = -1, prefix = ''):
     # First Acc
     trainloss_all(0, pretrained_dataset, prefix+'pretrained_')
     val(0, pretrained_dataset, prefix+'pretrained_')
-    trainloss_all(0, dataset, prefix)
-    val(0, dataset, prefix)
+    trainloss_all(0, dataset, prefix, multihead=args.multihead)
+    val(0, dataset, prefix, multihead=args.multihead)
 
     for epoch in range(1, epochs + 1):
         start = time.time()
@@ -315,6 +315,8 @@ def log_h_delta(epoch, prefix = ''):
     dh_norm_dict = {}
     int_dh_norm_dict = {}
     for mname in pre_act_dict.keys():
+        if 'head' in mname:
+            continue
         h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
         dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
         int_dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - tmp_pre_act_dict[mname]).mean(dtype=torch.float32).item()
@@ -636,7 +638,7 @@ if __name__=='__main__':
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
-
+    parser.add_argument('--RandomAffine', action='store_true', default=False)
     parser.add_argument('--config', default=None,
                         help='config file path')
 

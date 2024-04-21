@@ -17,6 +17,7 @@ class SimpleCNN(nn.Module):
         self.conv2.base_fan_out=50*base_width
         self.output_layer.base_fan_out=10
         ###
+        self.num_features = filters2 * (input_size//4) * (input_size//4)
 
     def forward(self, x):
         x = F.relu(self.input_layer(x))
