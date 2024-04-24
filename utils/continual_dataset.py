@@ -83,7 +83,7 @@ class MNIST(Dataset):
             np.random.shuffle(indices)
             train_idx = indices[:args.train_size]
             self.train_dataset = Subset(self.train_dataset, train_idx)
-            #self.train_val_dataset = Subset(self.train_val_dataset, train_idx)
+            self.train_val_dataset = Subset(self.train_val_dataset, train_idx)
 
         super().__init__(args)
 

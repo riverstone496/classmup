@@ -728,6 +728,8 @@ if __name__=='__main__':
 
     if args.multihead and 'zero' in args.parametrization:
         torch.nn.init.zeros_(model.head2.weight)
+    if args.multihead and 'muP' in args.parametrization:
+        model.head2.weight.data /= (args.width / args.base_width)**0.5
 
     # Head_Init_Iters
     if args.log_weight_delta:
