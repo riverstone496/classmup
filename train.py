@@ -148,13 +148,6 @@ def train(epoch, prefix = '', train_iterations=-1):
             return
         model.train()
         x, t = x.to(device), t.to(device)
-
-        if args.class_bulk:
-            t_random_adjusted = t.clone()
-            for idx in range(len(t)):
-                i = random.randint(0, int(args.width / args.base_width) - 1)
-                t_random_adjusted[idx] += dataset_original_class * i
-            t = t_random_adjusted
         
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
@@ -259,10 +252,14 @@ def register_fhook(model: torch.nn.Module):
     return model
 
 def MSE_label(output, target):
-    y_onehot = output.new_zeros(output.size(0), dataset.num_classes)
+    if args.multihead:
+        dataset_num_classes = args.task1_class
+    else:
+        dataset_num_classes = dataset.num_classes
+    y_onehot = output.new_zeros(output.size(0), dataset_num_classes)
     y_onehot.scatter_(1, target.unsqueeze(-1), 1)
     if not args.spaese_coding_mse:
-        y_onehot -= 1/dataset.num_classes
+        y_onehot -= 1/dataset_num_classes
     return y_onehot
 
 def register_fhook(model: torch.nn.Module):
