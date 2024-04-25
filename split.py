@@ -607,7 +607,6 @@ if __name__=='__main__':
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
-    parser.add_argument('--rotation_angle', type=float, default=0)
     parser.add_argument('--permutate', action='store_true', default=False)
     parser.add_argument('--train_classes', type=str, default=None)
     parser.add_argument('--task1_class', type=int, default=10)
@@ -661,13 +660,13 @@ if __name__=='__main__':
 
     if args.dataset == 'MNIST':
         pretrained_dataset = utils.dataset.MNIST(args=args)
-        dataset = utils.dataset.MNIST(args=args, rotation_angle=args.rotation_angle, permutate=args.permutate)
+        dataset = utils.dataset.MNIST(args=args, permutate=args.permutate)
     elif args.dataset == 'FashionMNIST':
         pretrained_dataset = utils.dataset.FashionMNIST(args=args)
-        dataset = utils.dataset.FashionMNIST(args=args, rotation_angle=args.rotation_angle)
+        dataset = utils.dataset.FashionMNIST(args=args)
     elif args.dataset == 'CIFAR10':
         pretrained_dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
-        dataset = utils.dataset.CIFAR10(args=args, rotation_angle=args.rotation_angle, task_classes=args.train_classes)
+        dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
 
     dataset_original_class = dataset.num_classes
     if args.class_scaling:
@@ -699,7 +698,7 @@ if __name__=='__main__':
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
 
     if args.pretrained_epochs > 0:
-        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) + '_hp_' + str(args.head_init_epochs) +'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
+        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_hp_' + str(args.head_init_epochs) +'_pretrained_param_' + str(args.pretrained_parametrization)+'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
         folder_path = os.path.join(args.ckpt_folder, file_name)
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])

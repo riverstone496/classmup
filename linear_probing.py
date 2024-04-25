@@ -165,7 +165,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
         model.train()
         x, t = x.to(device), t.to(device)
         t -= args.task1_class
-        
+
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
                 loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
@@ -348,7 +348,38 @@ def muP_set(args):
             args.c_output=0
             args.c_input=0
             args.c_hidden=0
-    if args.parametrization == 'UP':
+    if args.parametrization == 'NTK':
+        args.output_nonzero = True
+        if args.optim == 'sgd':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=1
+            args.c_input=0
+        if 'kfac' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+        if args.optim == 'shampoo':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1/2
+            args.c_hidden=1/2
+            args.c_input=0
+        if 'foof' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+    if args.parametrization == 'NTK_zero':
+        args.output_nonzero = False
         if args.optim == 'sgd':
             args.b_output=1/2
             args.b_hidden=1/2
@@ -536,6 +567,7 @@ if __name__=='__main__':
     parser.add_argument('--optim', default='sgd')
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
                         help='file location to load base shapes from')
+    parser.add_argument('--pretrained_ckpt_folder', type=str, default='./ckpts/premutate_mlp_mnist/')
     parser.add_argument('--ckpt_folder', type=str, default='./ckpts/premutate_mlp_mnist/')
 
     parser.add_argument('--b_input', type=float, default=0.5,
@@ -610,7 +642,6 @@ if __name__=='__main__':
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)
     parser.add_argument('--class_reduction_type', type=str, default='mean')
-    parser.add_argument('--rotation_angle', type=float, default=0)
     parser.add_argument('--permutate', action='store_true', default=False)
     parser.add_argument('--train_classes', type=str, default=None)
     parser.add_argument('--task1_class', type=int, default=10)
@@ -664,13 +695,13 @@ if __name__=='__main__':
 
     if args.dataset == 'MNIST':
         pretrained_dataset = utils.dataset.MNIST(args=args)
-        dataset = utils.dataset.MNIST(args=args, rotation_angle=args.rotation_angle, permutate=args.permutate)
+        dataset = utils.dataset.MNIST(args=args, permutate=args.permutate)
     elif args.dataset == 'FashionMNIST':
         pretrained_dataset = utils.dataset.FashionMNIST(args=args)
-        dataset = utils.dataset.FashionMNIST(args=args, rotation_angle=args.rotation_angle)
+        dataset = utils.dataset.FashionMNIST(args=args)
     elif args.dataset == 'CIFAR10':
         pretrained_dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
-        dataset = utils.dataset.CIFAR10(args=args, rotation_angle=args.rotation_angle, task_classes=args.train_classes)
+        dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
 
     dataset_original_class = dataset.num_classes
     if args.class_scaling:
@@ -703,7 +734,7 @@ if __name__=='__main__':
 
     if args.pretrained_epochs > 0:
         file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_param_' + str(args.pretrained_parametrization) + '_tsize_' + str(args.pretrained_train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
-        folder_path = os.path.join(args.ckpt_folder, file_name)
+        folder_path = os.path.join(args.pretrained_ckpt_folder, file_name)
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -730,7 +761,7 @@ if __name__=='__main__':
         print(e)
     
     if args.save_ckpt:
-        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.epochs) + '_hp_' + str(args.head_init_epochs) +'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
+        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_hp_' + str(args.head_init_epochs) +'_pretrained_param_' + str(args.pretrained_parametrization)+'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
         folder_path = os.path.join(args.ckpt_folder, file_name)
         log_dict = {'max_validation_acc':max_validation_acc,
                     'max_train_acc_all':max_train_acc_all}
