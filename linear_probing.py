@@ -164,13 +164,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             return
         model.train()
         x, t = x.to(device), t.to(device)
-
-        if args.class_bulk:
-            t_random_adjusted = t.clone()
-            for idx in range(len(t)):
-                i = random.randint(0, int(args.width / args.base_width) - 1)
-                t_random_adjusted[idx] += dataset_original_class * i
-            t = t_random_adjusted
+        t -= args.task1_class
         
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
@@ -192,26 +186,10 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             y = model(x)
         loss = loss_func(y,t2)
         loss.backward()
-        grad_norm = get_grad_norm(model)
 
-        if args.loss_type == 'cross_entropy' and batch_idx%100==0:
-            t3 = t2
-            if t2.ndim == 1:
-                t3 = F.one_hot(t3, num_classes=y.size(1)).float()
-            chi_norm = torch.abs(F.log_softmax(y, dim=1)-t3).mean(dtype=torch.float32).item()
-        elif args.loss_type=='mse' and batch_idx%100==0:
-            chi_norm = torch.abs(y-t2).mean(dtype=torch.float32).item()
-
-        if args.chi_fixed:
-            current_lr = optimizer.param_groups[0]['lr']  # 現在の学習率を取得
-            adjust_learning_rate(optimizer, current_lr/chi_norm)  # 学習率を更新
-        
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-        
-        if args.chi_fixed:
-            adjust_learning_rate(optimizer, current_lr)  # 学習率を更新
         
         if batch_idx%100==0 and args.wandb:
             if args.class_bulk:
@@ -222,7 +200,6 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
-            l1_norm, l2_norm = get_weight_norm(model)
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:
@@ -233,11 +210,6 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
                    prefix + 'train_accuracy': float(acc),
                    prefix + 'max_train_acc':max_train_acc,
                    prefix + 'min_train_loss':min_train_loss,
-                   prefix + 'l1_norm':l1_norm,
-                   prefix + 'l2_norm':l2_norm,
-                   prefix + 'grad_norm_all':grad_norm,
-                   prefix + 'chi_norm':chi_norm,
-                   prefix + 'chi_norm_inv':1/chi_norm,
                    }
             wandb.log(log)
 
@@ -278,10 +250,14 @@ def register_fhook(model: torch.nn.Module):
     return model
 
 def MSE_label(output, target):
-    y_onehot = output.new_zeros(output.size(0), dataset.num_classes)
+    if args.multihead:
+        dataset_num_classes = args.task2_class
+    else:
+        dataset_num_classes = dataset.num_classes
+    y_onehot = output.new_zeros(output.size(0), dataset_num_classes)
     y_onehot.scatter_(1, target.unsqueeze(-1), 1)
     if not args.spaese_coding_mse:
-        y_onehot -= 1/dataset.num_classes
+        y_onehot -= 1/dataset_num_classes
     return y_onehot
 
 def register_fhook(model: torch.nn.Module):
