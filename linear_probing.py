@@ -48,8 +48,6 @@ def main(epochs, iterations = -1, prefix = ''):
         start = time.time()
         train(epoch, prefix, iterations, multihead=args.multihead)
         total_train_time += time.time() - start
-        trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_')
-        val(epoch, pretrained_dataset, prefix+'pretrained_')
         train_accuracy = trainloss_all(epoch, dataset, prefix, multihead=args.multihead)
         nantf = val(epoch, dataset, prefix, multihead=args.multihead)
         if args.log_h_delta:
@@ -75,6 +73,7 @@ def val(epoch, dataset, prefix = '', multihead=False):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
+            target -= args.task1_class
             if multihead:
                 output = model(data, task=1)
             else:
@@ -115,15 +114,17 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
     train_loss = 0
     correct = 0
     #with torch.no_grad():
+    optimizer.zero_grad(set_to_none=True)
     for data, target in dataset.train_val_loader:
         data, target = data.to(device), target.to(device)
+        target -= args.task1_class
         if multihead:
             output = model(data, task=1)
         else:
             output = model(data)
-        loss = F.cross_entropy(output, target).item()
+        loss = F.cross_entropy(output, target)
         loss.backward()
-        train_loss += loss
+        train_loss += loss.item()
         if args.class_bulk:
             pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
         else:

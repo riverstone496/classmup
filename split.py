@@ -75,6 +75,7 @@ def val(epoch, dataset, prefix = '', multihead=False):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
+            target -= args.task1_class
             if multihead:
                 output = model(data, task=1)
             else:
@@ -117,6 +118,7 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
     with torch.no_grad():
         for data, target in dataset.train_val_loader:
             data, target = data.to(device), target.to(device)
+            target -= args.task1_class
             if multihead:
                 output = model(data, task=1)
             else:
