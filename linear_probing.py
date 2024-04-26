@@ -125,14 +125,11 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
         loss = F.cross_entropy(output, target)
         loss.backward()
         train_loss += loss.item()
-        if args.class_bulk:
-            pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
-        else:
-            pred = output.argmax(dim=1, keepdim=True)
+        pred = output.argmax(dim=1, keepdim=True)
         correct += pred.eq(target.view_as(pred)).sum().item()
     train_loss /= len(dataset.train_val_loader.dataset)
     train_accuracy = 100. * correct / len(dataset.train_val_loader.dataset)
-    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1e+3)
+    norm = torch.nn.utils.clip_grad_norm_(model.head2.parameters(), max_norm=1e+3)
     grad_norm = norm / len(dataset.train_val_loader.dataset)
     
     if train_accuracy>max_train_acc_all:
@@ -748,18 +745,29 @@ if __name__=='__main__':
     if args.log_weight_delta:
         initial_params = [param.clone() for param in model.parameters()]
     optimizer = create_optimizer_for_head(args, model, lr = args.init_lr)
-    scheduler=None    
-    if args.log_h_delta:
-        for i, data in enumerate(dataset.val_loader, 0):
-            inputs, labels = data
-            inputs_for_dh = inputs.to(device)
-            break
-        init_pre_act_dict = fetch_h(model, args.multihead)
-        tmp_pre_act_dict  = fetch_h(model, args.multihead)
-    try:
-        main(epochs=args.head_init_epochs, iterations=args.head_init_iterations, prefix='')
-    except ValueError as e:
-        print(e)
+    scheduler=None
+    if args.head_init_epochs > 0:
+        if args.scheduler == 'CosineAnnealingLR':
+            scheduler=CosineLRScheduler(optimizer, t_initial=args.head_init_epochs,lr_min=0, warmup_t=args.warmup_epochs)
+        elif args.scheduler == 'ExponentialLR':
+            scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
+        elif args.scheduler == 'Fraction':
+            scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr / (epoch+1))
+        elif args.scheduler == 'PolynomialLR':
+            scheduler = PolynomialLR(optimizer, total_iters=args.epochs, power=args.sched_power)
+            if args.warmup_epochs>0:
+                scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)    
+        if args.log_h_delta:
+            for i, data in enumerate(dataset.val_loader, 0):
+                inputs, labels = data
+                inputs_for_dh = inputs.to(device)
+                break
+            init_pre_act_dict = fetch_h(model, args.multihead)
+            tmp_pre_act_dict  = fetch_h(model, args.multihead)
+        try:
+            main(epochs=args.head_init_epochs, iterations=args.head_init_iterations, prefix='')
+        except ValueError as e:
+            print(e)
     
     if args.save_ckpt:
         file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_hp_' + str(args.head_init_epochs) +'_pretrained_param_' + str(args.pretrained_parametrization)+'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
