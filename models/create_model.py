@@ -93,7 +93,7 @@ def create_model(img_size, num_classes, num_channels, args):
     elif args.model=='MLPWithBatchNorm':
         model = MLPWithBatchNorm(img_size=img_size, hidden_dim=args.width, num_classes=num_classes)
     elif args.model == 'cnn':
-        model = SimpleCNN(width=args.width, num_channels=num_channels, input_size=img_size, base_width=args.base_width, num_classes=num_classes)
+        model = SimpleCNN(width=args.width, num_channels=num_channels, input_size=img_size, base_width=args.base_width, num_classes=num_classes, activation=args.activation)
     elif args.model == 'myrtle':
         model = MyrtleNet(width=args.width,img_size=img_size, depth=args.depth, num_input_channels=num_channels)
     elif args.model == 'resnet8':

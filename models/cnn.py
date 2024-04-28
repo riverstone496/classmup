@@ -1,13 +1,20 @@
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
 
 class SimpleCNN(nn.Module):
-    def __init__(self, width=16, num_channels=3, input_size=28, base_width=8, num_classes=10):
+    def __init__(self, width=16, num_channels=3, input_size=28, base_width=8, num_classes=10, activation = 'relu'):
         super(SimpleCNN, self).__init__()
         filters1, filters2 = width, 2 * width
         self.input_layer = nn.Conv2d(num_channels, filters1, 5, stride=1, padding=2)
         self.conv2 = nn.Conv2d(filters1, filters2, 5, stride=1, padding=2)
         self.output_layer = nn.Linear(filters2 * (input_size//4) * (input_size//4), num_classes)
+        if activation == 'tanh':
+            self.activation = torch.tanh
+        elif activation == 'relu':
+            self.activation = torch.relu
+        elif activation == 'gelu':
+            self.activation = torch.nn.functional.gelu
         
         ### base (when width=8)
         self.input_layer.base_fan_in=25*num_channels
@@ -20,9 +27,9 @@ class SimpleCNN(nn.Module):
         self.num_features = filters2 * (input_size//4) * (input_size//4)
 
     def forward(self, x):
-        x = F.relu(self.input_layer(x))
+        x = self.activation(self.input_layer(x))
         x = F.max_pool2d(x, 2, 2)
-        x = F.relu(self.conv2(x))
+        x = self.activation(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
         x = x.view(x.size(0), -1)  # flatten
         x = self.output_layer(x)
