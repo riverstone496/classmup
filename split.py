@@ -75,8 +75,9 @@ def val(epoch, dataset, prefix = '', multihead=False):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
-            target -= args.task1_class
-            if multihead:
+            if 'pretrained' not in prefix:
+                target -= args.task1_class
+            if multihead and 'pretrained' not in prefix:
                 output = model(data, task=1)
             else:
                 output = model(data)
@@ -118,8 +119,9 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
     with torch.no_grad():
         for data, target in dataset.train_val_loader:
             data, target = data.to(device), target.to(device)
-            target -= args.task1_class
-            if multihead:
+            if 'pretrained' not in prefix:
+                target -= args.task1_class
+            if multihead and 'pretrained' not in prefix:
                 output = model(data, task=1)
             else:
                 output = model(data)
@@ -611,6 +613,7 @@ if __name__=='__main__':
     parser.add_argument('--class_reduction_type', type=str, default='mean')
     parser.add_argument('--permutate', action='store_true', default=False)
     parser.add_argument('--train_classes', type=str, default=None)
+    parser.add_argument('--pretrained_classes', type=str, default=None)
     parser.add_argument('--task1_class', type=int, default=10)
     parser.add_argument('--task2_class', type=int, default=10)
 
@@ -632,6 +635,9 @@ if __name__=='__main__':
     if args.train_classes is not None:
         args.train_classes = args.train_classes.split(',')
         args.train_classes = [int(c) for c in args.train_classes]
+    if args.pretrained_classes is not None:
+        args.pretrained_classes = args.pretrained_classes.split(',')
+        args.pretrained_classes = [int(c) for c in args.pretrained_classes]
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     job_id = os.environ.get('SLURM_JOBID')
@@ -667,7 +673,7 @@ if __name__=='__main__':
         pretrained_dataset = utils.dataset.FashionMNIST(args=args)
         dataset = utils.dataset.FashionMNIST(args=args)
     elif args.dataset == 'CIFAR10':
-        pretrained_dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
+        pretrained_dataset = utils.dataset.CIFAR10(args=args, task_classes=args.pretrained_classes)
         dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
 
     dataset_original_class = dataset.num_classes
