@@ -106,6 +106,7 @@ class ResNet(nn.Module):
         self.input_layer.base_fan_out  = 9*base_width
         self.output_layer.base_fan_in  = 8*base_width*block.expansion
         self.output_layer.base_fan_out = num_classes
+        self.num_features = 128*block.expansion*width
 
     def _make_layer(self, block, planes, num_blocks, stride, base_width):
         strides = [stride] + [1]*(num_blocks-1)
