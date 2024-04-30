@@ -636,6 +636,9 @@ if __name__=='__main__':
     parser.add_argument('--class_scaling', action='store_true', default=False)
     parser.add_argument('--real_class_scaling', action='store_true', default=False)
     parser.add_argument('--class_bulk', action='store_true', default=False)
+    parser.add_argument('--population_coding', action='store_true', default=False)
+    parser.add_argument('--population_class', type=int, default=10)
+
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
     parser.add_argument('--class_reduction', action='store_true', default=False)

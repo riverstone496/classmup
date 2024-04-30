@@ -43,6 +43,7 @@ def main(epochs, iterations = -1, prefix = ''):
     val(0, pretrained_dataset, prefix+'pretrained_')
     trainloss_all(0, dataset, prefix, multihead=args.multihead)
     val(0, dataset, prefix, multihead=args.multihead)
+    wandb.run.summary["first_val_accuracy"] = max_validation_acc
 
     for epoch in range(1, epochs + 1):
         start = time.time()

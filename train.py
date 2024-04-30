@@ -70,7 +70,13 @@ def val(epoch, prefix = ''):
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.cross_entropy(output, target, reduction='sum').item()
+            if args.population_coding:
+                target2 = orthogonal_matrix[target]
+                test_loss += F.mse_loss(output, target2, reduction='sum').item()
+            elif args.population_coding:
+                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
+            else:
+                test_loss += F.cross_entropy(output, target, reduction='sum').item()
             if args.class_bulk:
                 pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
             else:
@@ -109,9 +115,15 @@ def trainloss_all(epoch, prefix = ''):
         for data, target in dataset.train_val_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            train_loss += F.cross_entropy(output, target).item()
+            if args.population_coding:
+                target2 = orthogonal_matrix[target]
+                train_loss += F.mse_loss(output, target2).item()
+            else:
+                train_loss += F.cross_entropy(output, target).item()
             if args.class_bulk:
                 pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
+            elif args.population_coding:
+                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
             else:
                 pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
@@ -149,7 +161,10 @@ def train(epoch, prefix = '', train_iterations=-1):
         model.train()
         x, t = x.to(device), t.to(device)
         
-        if args.loss_type == 'cross_entropy':
+        if args.population_coding:
+            loss_func = torch.nn.MSELoss()
+            t2 = orthogonal_matrix[t]
+        elif args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
                 loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
                 t2 = t
@@ -190,6 +205,8 @@ def train(epoch, prefix = '', train_iterations=-1):
         if batch_idx%100==0 and args.wandb:
             if args.class_bulk:
                 pred = y.data.max(1)[1] % dataset_original_class 
+            elif args.population_coding:
+                pred = (y@orthogonal_matrix.T).data.max(1)[1]
             else:
                 pred = y.data.max(1)[1]
             acc = 100. * pred.eq(t.data).cpu().sum() / t.size(0)
@@ -600,6 +617,9 @@ if __name__=='__main__':
     parser.add_argument('--class_scaling', action='store_true', default=False)
     parser.add_argument('--real_class_scaling', action='store_true', default=False)
     parser.add_argument('--class_bulk', action='store_true', default=False)
+    parser.add_argument('--population_coding', action='store_true', default=False)
+    parser.add_argument('--population_class', type=int, default=10)
+
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--multihead', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
@@ -673,8 +693,15 @@ if __name__=='__main__':
         dataset = utils.dataset.Cars(args=args)
 
     dataset_original_class = dataset.num_classes
-    if args.class_scaling:
+    if args.class_scaling or args.population_coding:
         dataset.num_classes *= int(args.width / args.base_width)
+    if args.population_coding:
+        random_matrix = torch.randn(dataset.num_classes, dataset.num_classes)
+        orthogonal_matrix, _ = torch.qr(random_matrix)
+        orthogonal_matrix *= (dataset.num_classes)**0.5
+        orthogonal_matrix = orthogonal_matrix.to(device)
+        args.task1_class = dataset.num_classes
+        args.task2_class = dataset.num_classes
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size
@@ -761,10 +788,13 @@ if __name__=='__main__':
         folder_path = os.path.join(args.ckpt_folder, file_name)
         log_dict = {'max_validation_acc':max_validation_acc,
                     'max_train_acc_all':max_train_acc_all}
-        torch.save({
+        save_dict = {
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'log_dict':log_dict
-                    }, folder_path)
+                    }
+        if args.population_coding:
+            save_dict['orthogonal_matrix'] = orthogonal_matrix
+        torch.save(save_dict, folder_path)
     
     wandb.finish()
