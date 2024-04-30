@@ -73,12 +73,12 @@ def val(epoch, prefix = ''):
             if args.population_coding:
                 target2 = orthogonal_matrix[target]
                 test_loss += F.mse_loss(output, target2, reduction='sum').item()
-            elif args.population_coding:
-                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
             else:
                 test_loss += F.cross_entropy(output, target, reduction='sum').item()
             if args.class_bulk:
                 pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
+            elif args.population_coding:
+                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
             else:
                 pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
@@ -618,7 +618,6 @@ if __name__=='__main__':
     parser.add_argument('--real_class_scaling', action='store_true', default=False)
     parser.add_argument('--class_bulk', action='store_true', default=False)
     parser.add_argument('--population_coding', action='store_true', default=False)
-    parser.add_argument('--population_class', type=int, default=10)
 
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--multihead', action='store_true', default=False)

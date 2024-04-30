@@ -78,9 +78,15 @@ def val(epoch, dataset, prefix = '', multihead=False):
                 output = model(data, task=1)
             else:
                 output = model(data)
-            test_loss += F.cross_entropy(output, target, reduction='sum').item()
+            if args.population_coding:
+                target2 = orthogonal_matrix[target]
+                test_loss += F.mse_loss(output, target2, reduction='sum').item()
+            else:
+                test_loss += F.cross_entropy(output, target, reduction='sum').item()
             if args.class_bulk:
                 pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
+            elif args.population_coding:
+                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
             else:
                 pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
@@ -122,10 +128,17 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
             output = model(data, task=1)
         else:
             output = model(data)
-        loss = F.cross_entropy(output, target)
+        if args.population_coding:
+            target2 = orthogonal_matrix[target]
+            loss = F.mse_loss(output, target2).item()
+        else:
+            loss = F.cross_entropy(output, target).item()
         loss.backward()
         train_loss += loss.item()
-        pred = output.argmax(dim=1, keepdim=True)
+        if args.population_coding:
+            pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
+        else:
+            pred = output.argmax(dim=1, keepdim=True)
         correct += pred.eq(target.view_as(pred)).sum().item()
     train_loss /= len(dataset.train_val_loader.dataset)
     train_accuracy = 100. * correct / len(dataset.train_val_loader.dataset)
@@ -164,6 +177,9 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
         x, t = x.to(device), t.to(device)
         t -= args.task1_class
 
+        if args.population_coding:
+            loss_func = torch.nn.MSELoss()
+            t2 = orthogonal_matrix[t]
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
                 loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
@@ -191,7 +207,9 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
         
         if batch_idx%100==0 and args.wandb:
             if args.class_bulk:
-                pred = y.data.max(1)[1] % dataset_original_class 
+                pred = y.data.max(1)[1] % dataset_original_class
+            elif args.population_coding:
+                pred = (y@orthogonal_matrix.T).data.max(1)[1]
             else:
                 pred = y.data.max(1)[1]
             acc = 100. * pred.eq(t.data).cpu().sum() / t.size(0)
@@ -594,7 +612,7 @@ if __name__=='__main__':
     parser.add_argument('--multihead', action='store_true', default=False)
     
     parser.add_argument('--parametrization', type=str, default='SP')
-    parser.add_argument('--pretrained_parametrization', type=str, default='SP')
+    parser.add_argument('--pretrained_parametrization', type=str, default='muP_output_zero')
 
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
@@ -637,7 +655,6 @@ if __name__=='__main__':
     parser.add_argument('--real_class_scaling', action='store_true', default=False)
     parser.add_argument('--class_bulk', action='store_true', default=False)
     parser.add_argument('--population_coding', action='store_true', default=False)
-    parser.add_argument('--population_class', type=int, default=10)
 
     parser.add_argument('--finetuning', action='store_true', default=False)
     parser.add_argument('--noise_eps', type=float, default=0)
@@ -705,8 +722,11 @@ if __name__=='__main__':
         dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
 
     dataset_original_class = dataset.num_classes
-    if args.class_scaling:
+    if args.class_scaling or args.population_coding:
         dataset.num_classes *= int(args.width / args.base_width)
+    if args.population_coding:
+        args.task1_class = dataset.num_classes
+        args.task2_class = dataset.num_classes
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size
@@ -732,12 +752,14 @@ if __name__=='__main__':
     else:
         model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
-
+    print(model)
     if args.pretrained_epochs > 0:
         file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_param_' + str(args.pretrained_parametrization) + '_tsize_' + str(args.pretrained_train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
         folder_path = os.path.join(args.pretrained_ckpt_folder, file_name)
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
+        if args.population_coding:
+            orthogonal_matrix = checkpoint['orthogonal_matrix']
 
     if args.multihead and 'zero' in args.parametrization:
         torch.nn.init.zeros_(model.head2.weight)
