@@ -130,9 +130,9 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
             output = model(data)
         if args.population_coding:
             target2 = orthogonal_matrix[target]
-            loss = F.mse_loss(output, target2).item()
+            loss = F.mse_loss(output, target2)
         else:
-            loss = F.cross_entropy(output, target).item()
+            loss = F.cross_entropy(output, target)
         loss.backward()
         train_loss += loss.item()
         if args.population_coding:
@@ -180,7 +180,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
         if args.population_coding:
             loss_func = torch.nn.MSELoss()
             t2 = orthogonal_matrix[t]
-        if args.loss_type == 'cross_entropy':
+        elif args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
                 loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
                 t2 = t
@@ -725,6 +725,10 @@ if __name__=='__main__':
     if args.class_scaling or args.population_coding:
         dataset.num_classes *= int(args.width / args.base_width)
     if args.population_coding:
+        random_matrix = torch.randn(dataset.num_classes, dataset.num_classes)
+        orthogonal_matrix, _ = torch.qr(random_matrix)
+        orthogonal_matrix *= (dataset.num_classes)**0.5
+        orthogonal_matrix = orthogonal_matrix.to(device)
         args.task1_class = dataset.num_classes
         args.task2_class = dataset.num_classes
 
@@ -759,7 +763,7 @@ if __name__=='__main__':
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         if args.population_coding:
-            orthogonal_matrix = checkpoint['orthogonal_matrix']
+            pretrained_orthogonal_matrix = checkpoint['orthogonal_matrix']
 
     if args.multihead and 'zero' in args.parametrization:
         torch.nn.init.zeros_(model.head2.weight)
