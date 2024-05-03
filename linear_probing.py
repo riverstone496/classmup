@@ -738,7 +738,7 @@ if __name__=='__main__':
         random_matrix = torch.randn(dataset.num_classes, dataset.num_classes)
         orthogonal_matrix, _ = torch.qr(random_matrix)
         orthogonal_matrix *= (dataset.num_classes)**0.5
-        orthogonal_matrix = orthogonal_matrix.to(device)
+        orthogonal_matrix = orthogonal_matrix[:args.task2_class, :].to(device)
         args.task1_class_head = args.task1_class
         args.task2_class_head = args.task2_class
         args.task1_class = dataset.num_classes
@@ -775,7 +775,7 @@ if __name__=='__main__':
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         if args.population_coding:
-            pretrained_orthogonal_matrix = checkpoint['orthogonal_matrix']
+            pretrained_orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task1_class, :]
 
     if args.multihead and 'zero' in args.parametrization:
         torch.nn.init.zeros_(model.head2.weight)
