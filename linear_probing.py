@@ -73,20 +73,25 @@ def val(epoch, dataset, prefix = '', multihead=False):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
-            target -= args.task1_class
-            if multihead:
+            if 'pretrained' not in prefix:
+                target -= args.task1_class_head
+            if multihead and 'pretrained' not in prefix:
                 output = model(data, task=1)
             else:
                 output = model(data)
             if args.population_coding:
-                target2 = orthogonal_matrix[target]
+                if 'pretrained' in prefix:
+                    target2 = pretrained_orthogonal_matrix[target]
+                else:
+                    target2 = orthogonal_matrix[target]
                 test_loss += F.mse_loss(output, target2, reduction='sum').item()
             else:
                 test_loss += F.cross_entropy(output, target, reduction='sum').item()
-            if args.class_bulk:
-                pred = output.argmax(dim=1, keepdim=True) % dataset_original_class
-            elif args.population_coding:
-                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
+            if args.population_coding:
+                if 'pretrained' in prefix:
+                    pred = (output@pretrained_orthogonal_matrix.T).argmax(dim=1, keepdim=True)
+                else:
+                    pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
             else:
                 pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
@@ -123,20 +128,27 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
     optimizer.zero_grad(set_to_none=True)
     for data, target in dataset.train_val_loader:
         data, target = data.to(device), target.to(device)
-        target -= args.task1_class
-        if multihead:
+        if 'pretrained' not in prefix:
+            target -= args.task1_class_head
+        if multihead and 'pretrained' not in prefix:
             output = model(data, task=1)
         else:
             output = model(data)
         if args.population_coding:
-            target2 = orthogonal_matrix[target]
+            if 'pretrained' in prefix:
+                target2 = pretrained_orthogonal_matrix[target]
+            else:
+                target2 = orthogonal_matrix[target]
             loss = F.mse_loss(output, target2)
         else:
             loss = F.cross_entropy(output, target)
         loss.backward()
         train_loss += loss.item()
         if args.population_coding:
-            pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
+            if 'pretrained' in prefix:
+                pred = (output@pretrained_orthogonal_matrix.T).argmax(dim=1, keepdim=True)
+            else:
+                pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
         else:
             pred = output.argmax(dim=1, keepdim=True)
         correct += pred.eq(target.view_as(pred)).sum().item()
@@ -175,7 +187,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             return
         model.train()
         x, t = x.to(device), t.to(device)
-        t -= args.task1_class
+        t -= args.task1_class_head
 
         if args.population_coding:
             loss_func = torch.nn.MSELoss()
@@ -206,16 +218,14 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             optimizer.zero_grad(set_to_none=True)
         
         if batch_idx%100==0 and args.wandb:
-            if args.class_bulk:
-                pred = y.data.max(1)[1] % dataset_original_class
-            elif args.population_coding:
+            if args.population_coding:
                 pred = (y@orthogonal_matrix.T).data.max(1)[1]
             else:
                 pred = y.data.max(1)[1]
             acc = 100. * pred.eq(t.data).cpu().sum() / t.size(0)
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f} Acc: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
-                100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
+                100. * batch_idx / dataset.num_steps_per_epoch, float(loss), float(acc)))
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:
@@ -729,6 +739,8 @@ if __name__=='__main__':
         orthogonal_matrix, _ = torch.qr(random_matrix)
         orthogonal_matrix *= (dataset.num_classes)**0.5
         orthogonal_matrix = orthogonal_matrix.to(device)
+        args.task1_class_head = args.task1_class
+        args.task2_class_head = args.task2_class
         args.task1_class = dataset.num_classes
         args.task2_class = dataset.num_classes
 
