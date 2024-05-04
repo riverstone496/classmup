@@ -741,10 +741,10 @@ if __name__=='__main__':
         orthogonal_matrix, _ = torch.qr(random_matrix)
         orthogonal_matrix *= (dataset.num_classes)**0.5
         orthogonal_matrix = orthogonal_matrix[:args.task2_class, :].to(device)
-        args.task1_class_head = args.task1_class
-        args.task2_class_head = args.task2_class
         args.task1_class = dataset.num_classes
         args.task2_class = dataset.num_classes
+    args.task1_class_head = args.task1_class
+    args.task2_class_head = args.task2_class
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size
