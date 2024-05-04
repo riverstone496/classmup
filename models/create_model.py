@@ -1,4 +1,4 @@
-from .mlp import MLP, MLPWithBatchNorm
+from .mlp import MLP, MLPWithBatchNorm, MLP_LN
 from .cnn import SimpleCNN
 from .myrtle import MyrtleNet
 from .resnet import ResNet8, ResNet18, ResNet50
@@ -90,6 +90,15 @@ def create_model(img_size, num_classes, num_channels, args):
             model = MLP(n_hid=args.width,img_size=img_size,num_channels=num_channels,num_classes=num_classes,bias=args.bias, nonlin=torch.nn.functional.gelu, depth=args.depth)
         if args.activation == 'identity':
             model = MLP(n_hid=args.width,img_size=img_size,num_channels=num_channels,num_classes=num_classes,bias=args.bias, nonlin=lambda x: x, depth=args.depth)
+    elif args.model == 'mlp_ln':
+        if args.activation == 'tanh':
+            model = MLP_LN(n_hid=args.width,img_size=img_size,num_channels=num_channels,num_classes=num_classes,bias=args.bias, nonlin=torch.tanh, depth=args.depth)
+        if args.activation == 'relu':
+            model = MLP_LN(n_hid=args.width,img_size=img_size,num_channels=num_channels,num_classes=num_classes,bias=args.bias, nonlin=torch.relu, depth=args.depth)
+        if args.activation == 'gelu':
+            model = MLP_LN(n_hid=args.width,img_size=img_size,num_channels=num_channels,num_classes=num_classes,bias=args.bias, nonlin=torch.nn.functional.gelu, depth=args.depth)
+        if args.activation == 'identity':
+            model = MLP_LN(n_hid=args.width,img_size=img_size,num_channels=num_channels,num_classes=num_classes,bias=args.bias, nonlin=lambda x: x, depth=args.depth)
     elif args.model=='MLPWithBatchNorm':
         model = MLPWithBatchNorm(img_size=img_size, hidden_dim=args.width, num_classes=num_classes)
     elif args.model == 'cnn':

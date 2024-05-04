@@ -775,7 +775,7 @@ if __name__=='__main__':
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         if args.population_coding:
-            pretrained_orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task1_class, :]
+            pretrained_orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task1_class_head, :]
 
     if args.multihead and 'zero' in args.parametrization:
         torch.nn.init.zeros_(model.head2.weight)
@@ -815,10 +815,14 @@ if __name__=='__main__':
         folder_path = os.path.join(args.ckpt_folder, file_name)
         log_dict = {'max_validation_acc':max_validation_acc,
                     'max_train_acc_all':max_train_acc_all}
-        torch.save({
+        save_dict = {
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'log_dict':log_dict
-                    }, folder_path)
+                    }
+        if args.population_coding:
+            save_dict['orthogonal_matrix'] = orthogonal_matrix
+            save_dict['pretrained_orthogonal_matrix'] = pretrained_orthogonal_matrix
+        torch.save(save_dict, folder_path)
         
     wandb.finish()
