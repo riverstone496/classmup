@@ -704,10 +704,10 @@ if __name__=='__main__':
     if args.class_scaling or args.population_coding:
         dataset.num_classes *= int(args.width / args.base_width)
     if args.population_coding:
-        args.task1_class_head = args.task1_class
-        args.task2_class_head = args.task2_class
         args.task1_class = dataset.num_classes
         args.task2_class = dataset.num_classes
+    args.task1_class_head = args.task1_class
+    args.task2_class_head = args.task2_class
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size
