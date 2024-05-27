@@ -185,7 +185,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             return
         model.train()
         x, t = x.to(device), t.to(device)
-        t -= args.task1_class
+        t -= args.task1_class_head
 
         if args.population_coding:
             loss_func = torch.nn.MSELoss()
@@ -205,7 +205,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             t2 = MSE_label(x, t)
 
         if multihead:
-            y=model(x, task=1)
+            y = model(x, task=1)
         else:
             y = model(x)
         loss = loss_func(y,t2)
@@ -624,6 +624,7 @@ if __name__=='__main__':
     parser.add_argument('--log_record', action='store_true', default=False)
     parser.add_argument('--use_timm', action='store_true', default=False,
                         help='enables CUDA training')
+    parser.add_argument('--population_coding', action='store_true', default=False)
     parser.add_argument('--wandb', action='store_false', default=True)
 
     parser.add_argument('--withoutShortcut', action='store_true', default=False)
@@ -703,11 +704,12 @@ if __name__=='__main__':
     dataset_original_class = dataset.num_classes
     if args.class_scaling or args.population_coding:
         dataset.num_classes *= int(args.width / args.base_width)
+    args.task1_class_head = args.task1_class
+    args.task2_class_head = args.task2_class
     if args.population_coding:
         args.task1_class = dataset.num_classes
         args.task2_class = dataset.num_classes
-    args.task1_class_head = args.task1_class
-    args.task2_class_head = args.task2_class
+    print("args.population_coding", args.population_coding, "args.task1_class, args.task2_class", args.task1_class, args.task2_class)
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size

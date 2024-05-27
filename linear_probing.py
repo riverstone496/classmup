@@ -736,6 +736,8 @@ if __name__=='__main__':
     dataset_original_class = dataset.num_classes
     if args.class_scaling or args.population_coding:
         dataset.num_classes *= int(args.width / args.base_width)
+    args.task1_class_head = args.task1_class
+    args.task2_class_head = args.task2_class
     if args.population_coding:
         random_matrix = torch.randn(dataset.num_classes, dataset.num_classes)
         orthogonal_matrix, _ = torch.qr(random_matrix)
@@ -743,8 +745,6 @@ if __name__=='__main__':
         orthogonal_matrix = orthogonal_matrix[:args.task2_class, :].to(device)
         args.task1_class = dataset.num_classes
         args.task2_class = dataset.num_classes
-    args.task1_class_head = args.task1_class
-    args.task2_class_head = args.task2_class
 
     if args.pseudo_batch_size != -1:
         args.accumulate_iters = args.pseudo_batch_size / args.batch_size
