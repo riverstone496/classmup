@@ -9,6 +9,7 @@ import math
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
+from torch.func import vmap, jacrev
 
 import os,json
 import utils.dataset
@@ -21,7 +22,6 @@ from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
 import random
-import torchntk
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -36,257 +36,6 @@ job_id = os.environ.get('SLURM_JOBID')
 if job_id is not None:
     os.environ["WANDB_HOST"] = job_id
 
-def main(epochs, iterations = -1, prefix = ''):
-    total_train_time=0
-
-    # First Acc
-    trainloss_all(0, pretrained_dataset, prefix+'pretrained_')
-    val(0, pretrained_dataset, prefix+'pretrained_')
-    trainloss_all(0, dataset, prefix, multihead=args.multihead)
-    val(0, dataset, prefix, multihead=args.multihead)
-    wandb.run.summary["first_val_accuracy"] = max_validation_acc
-
-    for epoch in range(1, epochs + 1):
-        start = time.time()
-    print(f'total_train_time: {total_train_time:.2f}s')
-    print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
-    print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
-    if args.wandb:
-        wandb.run.summary['total_train_time'] = total_train_time
-        wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
-        wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
-
-def val(epoch, dataset, prefix = '', multihead=False):
-    global max_validation_acc,min_validation_loss
-    model.eval()
-    test_loss = 0
-    correct = 0
-    with torch.no_grad():
-        for data, target in dataset.val_loader:
-            data, target = data.to(device), target.to(device)
-            if 'pretrained' not in prefix:
-                target -= args.task1_class_head
-            if multihead and 'pretrained' not in prefix:
-                output = model(data, task=1)
-            else:
-                output = model(data)
-            if args.population_coding:
-                if 'pretrained' in prefix:
-                    target2 = pretrained_orthogonal_matrix[target]
-                else:
-                    target2 = orthogonal_matrix[target]
-                test_loss += F.mse_loss(output, target2, reduction='sum').item()
-            else:
-                test_loss += F.cross_entropy(output, target, reduction='sum').item()
-            if args.population_coding:
-                if 'pretrained' in prefix:
-                    pred = (output@pretrained_orthogonal_matrix.T).argmax(dim=1, keepdim=True)
-                else:
-                    pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
-            else:
-                pred = output.argmax(dim=1, keepdim=True)
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-    test_loss /= len(dataset.val_loader.dataset)
-    test_accuracy = 100. * correct / len(dataset.val_loader.dataset)
-    if test_accuracy>max_validation_acc:
-        max_validation_acc=test_accuracy
-    if test_loss<min_validation_loss:
-        min_validation_loss=test_loss
-
-    if args.wandb:
-        log = {prefix + 'epoch': epoch,
-               prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
-               prefix + 'val_loss': test_loss,
-               prefix + 'val_accuracy': test_accuracy,
-               prefix + 'max_validation_acc':max_validation_acc,
-               prefix + 'min_validation_loss':min_validation_loss}
-        wandb.log(log)
-    print('Epoch {:.0f} = Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        epoch, test_loss, correct, len(dataset.val_loader.dataset), test_accuracy))
-
-    if math.isnan(test_loss):
-        print('Error: Train loss is nan', file=sys.stderr)
-        return True
-    return False
-
-def trainloss_all(epoch, dataset, prefix = '', multihead=False):
-    global max_train_acc_all,min_train_loss_all
-    model.eval()
-    train_loss = 0
-    correct = 0
-    with torch.no_grad():
-        for data, target in dataset.train_val_loader:
-            data, target = data.to(device), target.to(device)
-            if 'pretrained' not in prefix:
-                target -= args.task1_class_head
-            if multihead and 'pretrained' not in prefix:
-                output = model(data, task=1)
-            else:
-                output = model(data)
-            if args.population_coding:
-                if 'pretrained' in prefix:
-                    target2 = pretrained_orthogonal_matrix[target]
-                else:
-                    target2 = orthogonal_matrix[target]
-                train_loss += F.mse_loss(output, target2).item()
-            else:
-                train_loss += F.cross_entropy(output, target).item()
-            if args.population_coding:
-                if 'pretrained' in prefix:
-                    pred = (output@pretrained_orthogonal_matrix.T).argmax(dim=1, keepdim=True)
-                else:
-                    pred = (output@orthogonal_matrix.T).argmax(dim=1, keepdim=True)
-            else:
-                pred = output.argmax(dim=1, keepdim=True)
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-    train_loss /= len(dataset.train_val_loader.dataset)
-    train_accuracy = 100. * correct / len(dataset.train_val_loader.dataset)
-    
-    if train_accuracy>max_train_acc_all:
-        max_train_acc_all=train_accuracy
-    if train_loss<min_train_loss_all:
-        min_train_loss_all=train_loss
-
-    if args.wandb:
-        log = {prefix + 'epoch': epoch,
-               prefix + 'iteration': (epoch) * dataset.num_steps_per_epoch,
-               prefix + 'train_loss_all': train_loss,
-               prefix + 'train_accuracy_all': train_accuracy,
-               prefix + 'max_train_acc_all':max_train_acc_all,
-               prefix + 'min_train_loss_all':min_train_loss_all}
-        wandb.log(log)
-    print('Epoch {:.0f} = Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        epoch, train_loss, correct, len(dataset.val_loader.dataset), train_accuracy))
-
-    if math.isnan(train_loss):
-        print('Error: Train loss is nan', file=sys.stderr)
-        return True
-    return train_accuracy
-
-def train(epoch, prefix = '', train_iterations=-1, multihead=False):
-    global max_train_acc,min_train_loss
-    optimizer.zero_grad(set_to_none=True)
-    for batch_idx, (x, t) in enumerate(dataset.train_loader):
-        if train_iterations != -1 and (epoch-1) * dataset.num_steps_per_epoch+batch_idx >= train_iterations:
-            return
-        model.train()
-        x, t = x.to(device), t.to(device)
-        t -= args.task1_class_head
-
-        if args.population_coding:
-            loss_func = torch.nn.MSELoss()
-            t2 = orthogonal_matrix[t]
-        elif args.loss_type == 'cross_entropy':
-            if args.noise_eps>0 or args.class_reduction:
-                loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
-                t2 = t
-            else:
-                loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
-                t2 = t
-        elif args.loss_type=='mse':
-            if args.noise_eps>0 or args.class_reduction:
-                loss_func = CustomMSELossWithL2Reg(model=model, lambda_reg=0, reduction=args.class_reduction_type)
-            else:
-                loss_func = torch.nn.MSELoss()
-            t2 = MSE_label(x, t)
-
-        NTK_components = torchntk.autograd.vmap_ntk_loader(model,dataset.train_loader)
-
-# 学習率を調整する関数
-def adjust_learning_rate(optimizer, lr):
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-def get_weight_norm(model):
-    l1_norm = sum(p.abs().sum() for p in model.parameters())
-    l2_norm = sum(p.pow(2).sum() for p in model.parameters())
-    return l1_norm.item(), (l2_norm.item()**0.5)
-
-def get_grad_norm(model):
-    total_norm = 0.0
-    for param in model.parameters():
-        if param.grad is not None:
-            param_norm = param.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-    total_norm = total_norm ** 0.5
-    return total_norm
-
-def forward_hook(_module, in_data, out_data):
-    if not hasattr(_module,'prev_out_data'):
-        _module.prev_out_data = out_data.detach().clone()
-    _module.out_data = out_data.detach().clone()
-
-def register_fhook(model: torch.nn.Module):
-    for name, module in model.named_modules():
-        if len(list(module.children())) > 0:
-            continue
-        if all(not p.requires_grad for p in module.parameters()):
-            continue
-        module.register_forward_hook(forward_hook)
-    return model
-
-def MSE_label(output, target):
-    if args.multihead:
-        dataset_num_classes = args.task2_class
-    else:
-        dataset_num_classes = dataset.num_classes
-    y_onehot = output.new_zeros(output.size(0), dataset_num_classes)
-    y_onehot.scatter_(1, target.unsqueeze(-1), 1)
-    if not args.spaese_coding_mse:
-        y_onehot -= 1/dataset_num_classes
-    return y_onehot
-
-def register_fhook(model: torch.nn.Module):
-    # forward hook function
-    def forward_hook(_module, in_data, out_data):
-      _module.out_data = out_data.detach().clone()
-    for name, module in model.named_modules():
-        if len(list(module.children())) > 0:
-            continue
-        if all(not p.requires_grad for p in module.parameters()):
-            continue
-        module.register_forward_hook(forward_hook)
-    return model
-
-def fetch_h(model, multihead=False):
-    model = register_fhook(model)
-    if multihead:
-        y = model(inputs_for_dh, task=1)
-    else:
-        y = model(inputs_for_dh)
-    pre_act_dict = {}
-    for name, module in model.named_modules():
-        if len(list(module.children())) > 0:
-              continue
-        if all(not p.requires_grad for p in module.parameters()):
-            continue
-        if hasattr(module, 'out_data'):
-            pre_act_dict[name] = module.out_data
-    return pre_act_dict
-
-def log_h_delta(epoch, prefix = ''):
-    global tmp_pre_act_dict
-    pre_act_dict = fetch_h(model, args.multihead)
-    h_norm_dict = {}
-    dh_norm_dict = {}
-    int_dh_norm_dict = {}
-    for mname in pre_act_dict.keys():
-        if 'head' in mname:
-            continue
-        h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
-        dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
-        int_dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - tmp_pre_act_dict[mname]).mean(dtype=torch.float32).item()
-    log = {prefix + 'epoch': epoch,
-           prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
-           prefix + 'h/':h_norm_dict,
-           prefix + 'dh/': dh_norm_dict,}
-    if epoch % args.log_dh_interval == 0:
-        log[prefix + 'tmp_dh/'] = int_dh_norm_dict
-        tmp_pre_act_dict = fetch_h(model, args.multihead)
-    if args.wandb:
-        wandb.log(log)
 
 class ParseAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -448,6 +197,73 @@ def muP_set(args):
         args.c_input=0
     if args.parametrization == 'Spectral_output_zero':
         args.output_nonzero = False
+
+def fnet_single(params, x):
+    for i in range(len(params)):
+        print(i, params[i].size())
+    x = x.view(-1, 32*32*3)  # 32x32x3に変更
+    x = F.linear(x, params[0], params[2])
+    x = F.layer_norm(x, [1024])
+    x = F.relu(x)
+    x = F.linear(x, params[1], params[3])
+    x = F.layer_norm(x, [1024])
+    x = F.relu(x)
+    x = F.linear(x, params[6], params[7])
+    return x
+
+def empirical_ntk_jacobian_contraction(fnet_single, params, x1, x2, block_size=32):
+    # Compute J(x1)
+    jac1 = vmap(jacrev(fnet_single), (None, 0))(params, x1)
+    jac1_flat = torch.cat([j.reshape(j.shape[0], -1) for j in jac1], dim=1)
+    
+    # Compute J(x2)
+    jac2 = vmap(jacrev(fnet_single), (None, 0))(params, x2)
+    jac2_flat = torch.cat([j.reshape(j.shape[0], -1) for j in jac2], dim=1)
+
+    # Initialize result matrix
+    num_x1 = jac1_flat.shape[0]
+    num_x2 = jac2_flat.shape[0]
+    result = torch.zeros((num_x1, num_x2), device=jac1_flat.device)
+
+    # Block-wise computation to save memory
+    for i in range(0, num_x1, block_size):
+        for j in range(0, num_x2, block_size):
+            block_jac1 = jac1_flat[i:i+block_size]
+            block_jac2 = jac2_flat[j:j+block_size]
+            result[i:i+block_size, j:j+block_size] = block_jac1 @ block_jac2.T
+    return result
+
+def predict_with_ntk(ntk, x_train, y_train, x_test, reg=1e-4):
+    # Compute Gram matrix and its inverse
+    K_train_train = ntk[:len(x_train), :len(x_train)]
+    K_train_train += reg * torch.eye(K_train_train.shape[-1], device=device)  # Regularization
+    K_train_train_inv = torch.inverse(K_train_train)
+    alpha = K_train_train_inv @ (y_train - model(x_train, task=1)).float()
+
+    preds_list = []
+    for i in range(0, len(x_test), 128):
+        x_test_batch = x_test[i:i+128]
+        K_train_test = empirical_ntk_jacobian_contraction(fnet_single, params, x_train, x_test_batch)
+        preds_batch = (model(x_test_batch, task=1) + K_train_test.transpose(0, 1) @ alpha).argmax(dim=1)
+        preds_list.append(preds_batch)
+    
+    return torch.cat(preds_list, dim=0)
+
+def predict_with_ntk(ntk, x_train, y_train, x_test, reg=1e-4):
+    # Compute Gram matrix and its inverse
+    K_train_train = ntk[:len(x_train), :len(x_train)]
+    K_train_train += reg * torch.eye(K_train_train.shape[-1], device=device)  # Regularization
+    K_train_train_inv = torch.inverse(K_train_train)
+    alpha = K_train_train_inv @ (y_train - model(x_train, task=1)).float()
+
+    preds_list = []
+    for i in range(0, len(x_test), 128):
+        x_test_batch = x_test[i:i+128]
+        K_train_test = empirical_ntk_jacobian_contraction(fnet_single, params, x_train, x_test_batch)
+        preds_batch = (model(x_test_batch, task=1) + K_train_test.transpose(0, 1) @ alpha).argmax(dim=1)
+        preds_list.append(preds_batch)
+    
+    return torch.cat(preds_list, dim=0)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -645,13 +461,10 @@ if __name__=='__main__':
         num_classes = -1
 
     if args.dataset == 'MNIST':
-        pretrained_dataset = utils.dataset.MNIST(args=args)
         dataset = utils.dataset.MNIST(args=args, permutate=args.permutate)
     elif args.dataset == 'FashionMNIST':
-        pretrained_dataset = utils.dataset.FashionMNIST(args=args)
         dataset = utils.dataset.FashionMNIST(args=args)
     elif args.dataset == 'CIFAR10':
-        pretrained_dataset = utils.dataset.CIFAR10(args=args, task_classes=args.pretrained_classes)
         dataset = utils.dataset.CIFAR10(args=args, task_classes=args.train_classes)
 
     dataset_original_class = dataset.num_classes
@@ -699,40 +512,31 @@ if __name__=='__main__':
             pretrained_orthogonal_matrix = checkpoint['pretrained_orthogonal_matrix'][:args.task1_class_head, :]
             orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task2_class_head, :]
 
-    if args.log_weight_delta:
-        initial_params = [param.clone() for param in model.parameters()]
-    if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
-        optimizer = create_spectral_optimizer(args, model, lr = args.lr)
-    else:
-        optimizer = create_optimizer(args, model, lr = args.lr)
-    scheduler=None
-    if args.head_init_epochs == -1:
-        if args.head_init_iterations != -1:
-            args.head_init_epochs = 1 + args.head_init_iterations // dataset.num_steps_per_epoch
-        elif args.head_init_iterations == -1:
-            args.head_init_epochs = 0
-    if args.scheduler == 'CosineAnnealingLR':
-        scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
-    elif args.scheduler == 'ExponentialLR':
-        scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
-    elif args.scheduler == 'Fraction':
-        scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr / (epoch+1))
-    elif args.scheduler == 'PolynomialLR':
-        scheduler = PolynomialLR(optimizer, total_iters=args.epochs, power=args.sched_power)
-        if args.warmup_epochs>0:
-            scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
+    params = [p for p in model.parameters()]
+    x_train, y_train = next(iter(dataset.train_loader))
+    # デバイスに転送
+    x_train, y_train = x_train.to(device), y_train.to(device)
+    ntk = empirical_ntk_jacobian_contraction(fnet_single, params, x_train, x_train)
+    y_train_one_hot = F.one_hot(y_train-8, num_classes=2).float()
 
-    if args.log_h_delta:
-        for i, data in enumerate(dataset.val_loader, 0):
-            inputs, labels = data
-            inputs_for_dh = inputs.to(device)
-            break
-        init_pre_act_dict = fetch_h(model, args.multihead)
-        tmp_pre_act_dict  = fetch_h(model, args.multihead)
-    try:
-        main(epochs=args.epochs, iterations=-1, prefix='')
-    except ValueError as e:
-        print(e)
-    
+    # テストデータをバッチごとに処理
+    test_preds_list = []
+    test_targets_list = []
+    with torch.no_grad():
+        for x_batch, y_batch in dataset.val_loader:
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)-8
+            preds = predict_with_ntk(ntk, x_train, y_train_one_hot, x_batch)
+            test_preds_list.append(preds)
+            test_targets_list.append(y_batch)
+
+    test_preds = torch.cat(test_preds_list, dim=0)
+    test_targets = torch.cat(test_targets_list, dim=0)
+
+    # 精度の計算
+    accuracy = (test_preds == test_targets).float().mean().item()
+    print(f'Test Accuracy: {accuracy * 100:.2f}%')
+    wandb.log({
+        'val_accuracy' : accuracy * 100
+    })
     
     wandb.finish()
