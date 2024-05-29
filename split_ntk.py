@@ -202,11 +202,11 @@ def fnet_single(params, x):
     for i in range(len(params)):
         print(i, params[i].size())
     x = x.view(-1, 32*32*3)  # 32x32x3に変更
-    x = F.linear(x, params[0], params[2])
-    x = F.layer_norm(x, [1024])
+    x = F.linear(x, params[0], None)
+    x = F.layer_norm(x, [1024], None)
     x = F.relu(x)
-    x = F.linear(x, params[1], params[3])
-    x = F.layer_norm(x, [1024])
+    x = F.linear(x, params[1], None)
+    x = F.layer_norm(x, [1024], None)
     x = F.relu(x)
     x = F.linear(x, params[6], params[7])
     return x
@@ -314,9 +314,9 @@ if __name__=='__main__':
     parser.add_argument('--CIFAR10Policy', action='store_true', default=False)
     parser.add_argument('--dataset_shuffle', action='store_true', default=False)
 
-    parser.add_argument('--lr', type=float, default=1e-1,
+    parser.add_argument('--lr', type=float, default=1e-2,
                         help='learning rate')
-    parser.add_argument('--pretrained_lr', type=float, default=1e-1,
+    parser.add_argument('--pretrained_lr', type=float, default=1e-2,
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0,
                         help='learning rate')
@@ -330,7 +330,7 @@ if __name__=='__main__':
     parser.add_argument('--optim', default='sgd')
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
                         help='file location to load base shapes from')
-    parser.add_argument('--ckpt_folder', type=str, default='./ckpts/premutate_mlp_mnist/')
+    parser.add_argument('--ckpt_folder', type=str, default='./lp_ckpts/mlp_ln_split_cifar_aug_10_8_2_1024/')
 
     parser.add_argument('--b_input', type=float, default=0.5,
                         help='learning rate')
@@ -358,7 +358,7 @@ if __name__=='__main__':
     parser.add_argument('--multihead', action='store_true', default=False)
     
     parser.add_argument('--parametrization', type=str, default='SP')
-    parser.add_argument('--pretrained_parametrization', type=str, default='SP')
+    parser.add_argument('--pretrained_parametrization', type=str, default='muP_output_zero')
 
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
@@ -384,11 +384,11 @@ if __name__=='__main__':
     parser.add_argument('--log_damping', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--num_workers', type=int, default=6)
-    parser.add_argument('--train_size', type=int, default=-1)
+    parser.add_argument('--train_size', type=int, default=128)
     parser.add_argument('--pretrained_train_size', type=int, default=-1)
 
     parser.add_argument('--widen_factor', type=int, default=4)
-    parser.add_argument('--loss_type', type=str, default='cross_entropy')
+    parser.add_argument('--loss_type', type=str, default='mse')
 
     parser.add_argument('--log_record', action='store_true', default=False)
     parser.add_argument('--use_timm', action='store_true', default=False,
@@ -535,8 +535,9 @@ if __name__=='__main__':
     # 精度の計算
     accuracy = (test_preds == test_targets).float().mean().item()
     print(f'Test Accuracy: {accuracy * 100:.2f}%')
-    wandb.log({
-        'val_accuracy' : accuracy * 100
-    })
+    if args.wandb:
+        wandb.log({
+            'val_accuracy' : accuracy * 100
+        })
     
     wandb.finish()
