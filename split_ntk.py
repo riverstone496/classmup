@@ -199,14 +199,12 @@ def muP_set(args):
         args.output_nonzero = False
 
 def fnet_single(params, x):
-    for i in range(len(params)):
-        print(i, params[i].size())
     x = x.view(-1, 32*32*3)  # 32x32x3に変更
     x = F.linear(x, params[0], None)
-    x = F.layer_norm(x, [1024], None)
+    x = F.layer_norm(x, [1024], params[2], params[3])
     x = F.relu(x)
     x = F.linear(x, params[1], None)
-    x = F.layer_norm(x, [1024], None)
+    x = F.layer_norm(x, [1024], params[2], params[3])
     x = F.relu(x)
     x = F.linear(x, params[6], params[7])
     return x
@@ -279,7 +277,7 @@ if __name__=='__main__':
     parser.add_argument('--input_mult', type=float, default=1)
     parser.add_argument('--init_std', type=float, default=1)
 
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=128,
                         help='input batch size for training (default: 128)')
     parser.add_argument('--val_batch_size', type=int, default=64,
                         help='input batch size for training (default: 128)')
@@ -330,7 +328,7 @@ if __name__=='__main__':
     parser.add_argument('--optim', default='sgd')
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
                         help='file location to load base shapes from')
-    parser.add_argument('--ckpt_folder', type=str, default='./lp_ckpts/mlp_ln_split_cifar_aug_10_8_2_1024/')
+    parser.add_argument('--ckpt_folder', type=str, default='./lp_ckpts/mlp_ln_split_cifar_aug_10_8_2/')
 
     parser.add_argument('--b_input', type=float, default=0.5,
                         help='learning rate')
@@ -513,6 +511,8 @@ if __name__=='__main__':
             orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task2_class_head, :]
 
     params = [p for p in model.parameters()]
+    for idx, (name, module) in enumerate(model.named_parameters()):
+        print(idx, name, module.size())
     x_train, y_train = next(iter(dataset.train_loader))
     # デバイスに転送
     x_train, y_train = x_train.to(device), y_train.to(device)
