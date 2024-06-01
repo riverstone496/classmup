@@ -204,7 +204,7 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
-            norm_layer_dic, abs_norm_layer_dic = get_weight_norm_delta(model, initial_model)
+            norm_layer_dic, abs_norm_layer_dic,spectral_norm_layer_dic = get_weight_norm_delta(model, initial_model)
             init_tensor = get_model_parameters_tensor(initial_model)
             mtensor = get_model_parameters_tensor(model)
             if acc>max_train_acc:
@@ -219,6 +219,7 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
                     prefix + 'min_train_loss':min_train_loss,
                     prefix + 'dif_layer/abs_':abs_norm_layer_dic,
                     prefix + 'dif_layer/l2_':norm_layer_dic,
+                    prefix + 'dif_layer/spectral_':spectral_norm_layer_dic,
                     prefix + 'dif/l2_':torch.norm(mtensor - init_tensor) / torch.norm(mtensor),
                     prefix + 'dif/abs_':torch.abs(mtensor - init_tensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
                     prefix + 'grad_norm_all':grad_norm
@@ -237,16 +238,16 @@ def get_model_parameters_tensor(model):
 def get_weight_norm_delta(model_a, model_b):
     norm_layer_dic={}
     abs_norm_layer_dic={}
+    spectral_norm_layer_dic = {}
     for (name_a, param_a), (name_b, param_b) in zip(model_a.named_parameters(), model_b.named_parameters()):
         if name_a != name_b:
             raise ValueError(f"Parameter names do not match: {name_a} vs {name_b}")
         diff = param_a - param_b
-        norml2 = torch.norm(diff, p=2)
-        norm_layer_dic[name_a] = norml2 / torch.norm(param_a, p=2)
-        normabs = torch.abs(diff).mean(dtype=torch.float32).item()
-        abs_norm_layer_dic[name_a] = normabs / torch.abs(param_a).mean(dtype=torch.float32).item()
+        norm_layer_dic[name_a] = torch.norm(diff, p=2) / torch.norm(param_a, p=2)
+        abs_norm_layer_dic[name_a] = torch.abs(diff).mean(dtype=torch.float32).item() / torch.abs(param_a).mean(dtype=torch.float32).item()
+        spectral_norm_layer_dic[name_a] = torch.linalg.norm(diff,ord=2) / torch.linalg.norm(param_a,ord=2)
 
-    return norm_layer_dic, abs_norm_layer_dic
+    return norm_layer_dic, abs_norm_layer_dic, spectral_norm_layer_dic
 
 def get_grad_norm(model):
     total_norm = 0.0
@@ -328,7 +329,7 @@ def log_h_delta(epoch, prefix = ''):
         wandb.log(log)
 
 def linear_weight_delta( model, linear_model):
-    norm_layer_dic, abs_norm_layer_dic = get_weight_norm_delta(model, linear_model)
+    norm_layer_dic, abs_norm_layer_dic, spectral_norm_layer_dic = get_weight_norm_delta(model, linear_model)
     mtensor = get_model_parameters_tensor(model)
     lmtensor = get_model_parameters_tensor(linear_model)
     log = {'width':args.width,
@@ -337,7 +338,8 @@ def linear_weight_delta( model, linear_model):
            'linear_dif/l2_all':torch.norm(mtensor - lmtensor) / torch.norm(mtensor),
            'linear_dif/abs_all':torch.abs(mtensor - lmtensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
            'linear_dif_layer/l2_':norm_layer_dic,
-           'linear_dif_layer/abs_':abs_norm_layer_dic}
+           'linear_dif_layer/abs_':abs_norm_layer_dic,
+           'linear_dif_layer/spectral_':spectral_norm_layer_dic}
     if args.wandb:
         wandb.log(log)
 
