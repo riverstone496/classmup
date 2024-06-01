@@ -439,7 +439,7 @@ def muP_set(args):
             args.c_output=0
             args.c_hidden=-1
             args.c_input=-1
-    if args.parametrization == 'muP_output_zero':
+    if args.parametrization == 'muP_output_zero' or args.parametrization == 'muP_zero':
         args.output_nonzero = False
         if args.optim == 'sgd':
             args.b_output=128
