@@ -382,7 +382,38 @@ def muP_set(args):
             args.c_output=0
             args.c_input=0
             args.c_hidden=0
-    if args.parametrization == 'UP':
+    if args.parametrization == 'UP' or args.parametrization == 'NTK':
+        args.output_nonzero = True
+        if args.optim == 'sgd':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1
+            args.c_hidden=1
+            args.c_input=0
+        if 'kfac' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+        if args.optim == 'shampoo':
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=1/2
+            args.c_hidden=1/2
+            args.c_input=0
+        if 'foof' in args.optim:
+            args.b_output=1/2
+            args.b_hidden=1/2
+            args.b_input=1/2
+            args.c_output=0
+            args.c_hidden=0
+            args.c_input=0
+    if args.parametrization == 'UP_zero' or args.parametrization == 'NTK_zero':
+        args.output_nonzero = False
         if args.optim == 'sgd':
             args.b_output=1/2
             args.b_hidden=1/2
@@ -448,7 +479,7 @@ def muP_set(args):
             args.c_output=0
             args.c_hidden=-1
             args.c_input=-1
-    if args.parametrization == 'muP_output_zero':
+    if args.parametrization == 'muP_output_zero' or args.parametrization == 'muP_zero':
         args.output_nonzero = False
         if args.optim == 'sgd':
             args.b_output=128
