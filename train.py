@@ -96,8 +96,8 @@ def val(epoch, prefix = ''):
                prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
                prefix + 'val_loss': test_loss,
                prefix + 'val_accuracy': test_accuracy,
-               prefix + 'max_validation_acc':max_validation_acc,
-               prefix + 'min_validation_loss':min_validation_loss}
+               prefix + 'max_val_acc':max_validation_acc,
+               prefix + 'min_val_loss':min_validation_loss}
         wandb.log(log)
     print('Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         test_loss, correct, len(dataset.val_loader.dataset), test_accuracy))
@@ -142,7 +142,7 @@ def trainloss_all(epoch, prefix = ''):
                prefix + 'iteration': (epoch) * dataset.num_steps_per_epoch,
                prefix + 'train_loss_all': train_loss,
                prefix + 'train_accuracy_all': train_accuracy,
-               prefix + 'max_train_acc_all':max_train_acc_all,
+               prefix + 'max_train_accuracy_all':max_train_acc_all,
                prefix + 'min_train_loss_all':min_train_loss_all}
         wandb.log(log)
     print('Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
@@ -218,7 +218,7 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
                     prefix + 'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
                     prefix + 'train_loss': float(loss),
                     prefix + 'train_accuracy': float(acc),
-                    prefix + 'max_train_acc':max_train_acc,
+                    prefix + 'max_train_accuracy':max_train_acc,
                     prefix + 'min_train_loss':min_train_loss,
                     prefix + 'dif/l2_':torch.norm(mtensor - init_tensor) / torch.norm(mtensor),
                     prefix + 'dif/abs_':torch.abs(mtensor - init_tensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
@@ -333,6 +333,7 @@ def linear_weight_delta( model, linear_model):
     mtensor = get_model_parameters_tensor(model)
     lmtensor = get_model_parameters_tensor(linear_model)
     log = {'width':args.width,
+           'epoch':args.epochs,
            'linear_dif/l2_linear':torch.norm(lmtensor),
            'linear_dif/l2_model':torch.norm(mtensor),
            'linear_dif/l2_all':torch.norm(mtensor - lmtensor) / torch.norm(mtensor),
