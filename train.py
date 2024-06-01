@@ -41,16 +41,17 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         start = time.time()
         train(epoch, prefix, iterations, linear_training=linear_training)
         total_train_time += time.time() - start
-        if (epoch-1)%args.log_val_interval==0:
-            train_accuracy = trainloss_all(epoch, prefix)
-            nantf = val(epoch, prefix)
-            if args.log_h_delta:
-                log_h_delta(epoch, prefix)
-            if nantf:
-                break
-            if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
-                wandb.run.summary['total_epochs_task'] = epoch
-                break
+        with torch.no_grad():
+            if (epoch-1)%args.log_val_interval==0:
+                train_accuracy = trainloss_all(epoch, prefix)
+                nantf = val(epoch, prefix)
+                if args.log_h_delta:
+                    log_h_delta(epoch, prefix)
+                if nantf:
+                    break
+                if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
+                    wandb.run.summary['total_epochs_task'] = epoch
+                    break
     print(f'total_train_time: {total_train_time:.2f}s')
     if args.epochs != 0:
         print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
@@ -91,7 +92,7 @@ def val(epoch, prefix = ''):
         min_validation_loss=test_loss
 
     if args.wandb:
-        log = {prefix + 'epoch': epoch,
+        log = {'epoch': epoch,
                prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
                prefix + 'val_loss': test_loss,
                prefix + 'val_accuracy': test_accuracy,
@@ -137,7 +138,7 @@ def trainloss_all(epoch, prefix = ''):
         min_train_loss_all=train_loss
 
     if args.wandb:
-        log = {prefix + 'epoch': epoch,
+        log = {'epoch': epoch,
                prefix + 'iteration': (epoch) * dataset.num_steps_per_epoch,
                prefix + 'train_loss_all': train_loss,
                prefix + 'train_accuracy_all': train_accuracy,
@@ -159,6 +160,7 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
         if train_iterations != -1 and (epoch-1) * dataset.num_steps_per_epoch+batch_idx >= train_iterations:
             return
         model.train()
+        initial_model.train()
         x, t = x.to(device), t.to(device)
         
         if args.population_coding:
@@ -185,13 +187,14 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
         loss = loss_func(y,t2)
         loss.backward()
         if linear_training:
-            for param_a, param_b in zip(model.parameters(), initial_model.parameters()):
-                param_b.grad = param_a.grad.clone()
-
+            for (name_a, param_init), (name_b, param_model) in zip(initial_model.named_parameters(), model.named_parameters()):
+                if param_init.grad is not None:
+                    param_model.grad = param_init.grad.clone()
         grad_norm = get_grad_norm(model)
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
+            initial_model.zero_grad() 
         
         if batch_idx%100==0 and args.wandb:
             if args.class_bulk:
@@ -204,22 +207,19 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
-            norm_layer_dic, abs_norm_layer_dic,spectral_norm_layer_dic = get_weight_norm_delta(model, initial_model)
-            init_tensor = get_model_parameters_tensor(initial_model)
-            mtensor = get_model_parameters_tensor(model)
+            with torch.no_grad():
+                init_tensor = get_model_parameters_tensor(initial_model)
+                mtensor = get_model_parameters_tensor(model)
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:
                 min_train_loss=loss
-            log = { prefix + 'epoch': epoch,
+            log = {'epoch': epoch,
                     prefix + 'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
                     prefix + 'train_loss': float(loss),
                     prefix + 'train_accuracy': float(acc),
                     prefix + 'max_train_acc':max_train_acc,
                     prefix + 'min_train_loss':min_train_loss,
-                    prefix + 'dif_layer/abs_':abs_norm_layer_dic,
-                    prefix + 'dif_layer/l2_':norm_layer_dic,
-                    prefix + 'dif_layer/spectral_':spectral_norm_layer_dic,
                     prefix + 'dif/l2_':torch.norm(mtensor - init_tensor) / torch.norm(mtensor),
                     prefix + 'dif/abs_':torch.abs(mtensor - init_tensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
                     prefix + 'grad_norm_all':grad_norm
@@ -318,7 +318,7 @@ def log_h_delta(epoch, prefix = ''):
         h_norm_dict[mname] = torch.abs(pre_act_dict[mname]).mean(dtype=torch.float32).item()
         dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - init_pre_act_dict[mname]).mean(dtype=torch.float32).item()
         int_dh_norm_dict[mname] = torch.abs(pre_act_dict[mname] - tmp_pre_act_dict[mname]).mean(dtype=torch.float32).item()
-    log = {prefix + 'epoch': epoch,
+    log = {'epoch': epoch,
            prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
            prefix + 'h/':h_norm_dict,
            prefix + 'dh/': dh_norm_dict,}
@@ -518,7 +518,7 @@ if __name__=='__main__':
     parser.add_argument('--input_mult', type=float, default=1)
     parser.add_argument('--init_std', type=float, default=1)
 
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=1024,
                         help='input batch size for training (default: 128)')
     parser.add_argument('--val_batch_size', type=int, default=64,
                         help='input batch size for training (default: 128)')
@@ -621,7 +621,7 @@ if __name__=='__main__':
     parser.add_argument('--ckpt_path', type=str, default='./ckpt/mlp/')
     parser.add_argument('--ckpt_interval', type=int, default=10)
 
-    parser.add_argument('--loss_type', type=str, default='cross_entropy')
+    parser.add_argument('--loss_type', type=str, default='mse')
 
     parser.add_argument('--log_record', action='store_true', default=False)
     parser.add_argument('--use_timm', action='store_true', default=False,
@@ -694,7 +694,7 @@ if __name__=='__main__':
         num_classes = -1
 
     if args.dataset == 'MNIST':
-        dataset = utils.dataset.MNIST(args=args)
+        dataset = utils.dataset.MNIST(args=args, task_classes=args.train_classes)
     elif args.dataset == 'FashionMNIST':
         dataset = utils.dataset.FashionMNIST(args=args)
     elif args.dataset == 'CIFAR10':
@@ -796,7 +796,7 @@ if __name__=='__main__':
             init_pre_act_dict = fetch_h(model)
             tmp_pre_act_dict  = fetch_h(model)
         try:
-            main(epochs=args.epochs, iterations=-1, prefix='LinearTraining', linear_training=True)
+            main(epochs=args.epochs, iterations=-1, prefix='LinearTraining/', linear_training=True)
         except ValueError as e:
             print(e)
         linear_model = copy.deepcopy(model)

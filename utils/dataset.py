@@ -86,7 +86,7 @@ class TaskSubset(Dataset):
         return len(self.indices)
 
 class MNIST(Dataset):
-    def __init__(self, args, rotation_angle=0, permutate=False):
+    def __init__(self, args, rotation_angle=0, permutate=False, task_classes=None):
         self.num_classes = 10
         self.num_channels=1
         self.img_size = 28
@@ -120,7 +120,10 @@ class MNIST(Dataset):
             self.train_dataset.data = permute_classwise(self.train_dataset, class_permutations, self.img_size, self.num_classes)
             self.train_val_dataset.data = permute_classwise(self.train_val_dataset, class_permutations, self.img_size, self.num_classes)
             self.val_dataset.data = permute_classwise(self.val_dataset, class_permutations, self.img_size, self.num_classes)
-
+        if task_classes is not None:
+            self.train_dataset = TaskSubset(self.train_dataset, task_classes)
+            self.train_val_dataset = TaskSubset(self.train_val_dataset, task_classes)
+            self.val_dataset = TaskSubset(self.val_dataset, task_classes)
         ## split dataset
         if args.train_size != -1:
             indices = list(range(len(self.train_dataset)))
