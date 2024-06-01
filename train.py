@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
 from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
-import random
+import copy
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -35,17 +35,19 @@ job_id = os.environ.get('SLURM_JOBID')
 if job_id is not None:
     os.environ["WANDB_HOST"] = job_id
 
-def main(epochs, iterations = -1, prefix = ''):
+def main(epochs, iterations = -1, prefix = '', linear_training = False):
     total_train_time=0
     for epoch in range(1, epochs + 1):
         start = time.time()
-        train(epoch, prefix, iterations)
+        train(epoch, prefix, iterations, linear_training=linear_training)
         total_train_time += time.time() - start
         if (epoch-1)%args.log_val_interval==0:
             train_accuracy = trainloss_all(epoch, prefix)
             nantf = val(epoch, prefix)
             if args.log_h_delta:
                 log_h_delta(epoch, prefix)
+            if args.linear_training and not linear_model and 'init_' not in prefix:
+                linear_weight_delta(epoch, model, linear_model)
             if nantf:
                 break
             if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
@@ -152,7 +154,7 @@ def trainloss_all(epoch, prefix = ''):
         return True
     return train_accuracy
 
-def train(epoch, prefix = '', train_iterations=-1):
+def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
     global max_train_acc,min_train_loss
     optimizer.zero_grad(set_to_none=True)
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
@@ -178,29 +180,20 @@ def train(epoch, prefix = '', train_iterations=-1):
                 loss_func = torch.nn.MSELoss()
             t2 = MSE_label(x, t)
 
-        y = model(x)
+        if linear_training:
+            y = initial_model(x)
+        else:
+            y = model(x)
         loss = loss_func(y,t2)
         loss.backward()
+        if linear_training:
+            for param_a, param_b in zip(model.parameters(), initial_model.parameters()):
+                param_b.grad = param_a.grad.clone()
+
         grad_norm = get_grad_norm(model)
-
-        if args.loss_type == 'cross_entropy' and batch_idx%100==0:
-            t3 = t2
-            if t2.ndim == 1:
-                t3 = F.one_hot(t3, num_classes=y.size(1)).float()
-            chi_norm = torch.abs(F.log_softmax(y, dim=1)-t3).mean(dtype=torch.float32).item()
-        elif args.loss_type=='mse' and batch_idx%100==0:
-            chi_norm = torch.abs(y-t2).mean(dtype=torch.float32).item()
-
-        if args.chi_fixed:
-            current_lr = optimizer.param_groups[0]['lr']  # 現在の学習率を取得
-            adjust_learning_rate(optimizer, current_lr/chi_norm)  # 学習率を更新
-        
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-        
-        if args.chi_fixed:
-            adjust_learning_rate(optimizer, current_lr)  # 学習率を更新
         
         if batch_idx%100==0 and args.wandb:
             if args.class_bulk:
@@ -213,37 +206,49 @@ def train(epoch, prefix = '', train_iterations=-1):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
-            l1_norm, l2_norm = get_weight_norm(model)
+            norm_layer_dic, abs_norm_layer_dic = get_weight_norm_delta(model, initial_model)
+            init_tensor = get_model_parameters_tensor(initial_model)
+            mtensor = get_model_parameters_tensor(model)
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:
                 min_train_loss=loss
-            log = {prefix + 'epoch': epoch,
-                   prefix + 'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
-                   prefix + 'train_loss': float(loss),
-                   prefix + 'train_accuracy': float(acc),
-                   prefix + 'max_train_acc':max_train_acc,
-                   prefix + 'min_train_loss':min_train_loss,
-                   prefix + 'l1_norm':l1_norm,
-                   prefix + 'l2_norm':l2_norm,
-                   prefix + 'grad_norm_all':grad_norm,
-                   prefix + 'chi_norm':chi_norm,
-                   prefix + 'chi_norm_inv':1/chi_norm,
+            log = { prefix + 'epoch': epoch,
+                    prefix + 'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
+                    prefix + 'train_loss': float(loss),
+                    prefix + 'train_accuracy': float(acc),
+                    prefix + 'max_train_acc':max_train_acc,
+                    prefix + 'min_train_loss':min_train_loss,
+                    prefix + 'dif_layer/abs_':abs_norm_layer_dic,
+                    prefix + 'dif_layer/l2_':norm_layer_dic,
+                    prefix + 'dif/l2_':torch.norm(mtensor - init_tensor) / torch.norm(mtensor),
+                    prefix + 'dif/abs_':torch.abs(mtensor - init_tensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
+                    prefix + 'grad_norm_all':grad_norm
                    }
             wandb.log(log)
 
     if scheduler is not None:
         scheduler.step(epoch=epoch)
 
-# 学習率を調整する関数
-def adjust_learning_rate(optimizer, lr):
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+def get_model_parameters_tensor(model):
+    parameters = []
+    for param in model.parameters():
+        parameters.append(param.view(-1))  # Flatten each parameter and add to the list
+    return torch.cat(parameters)
 
-def get_weight_norm(model):
-    l1_norm = sum(p.abs().sum() for p in model.parameters())
-    l2_norm = sum(p.pow(2).sum() for p in model.parameters())
-    return l1_norm.item(), (l2_norm.item()**0.5)
+def get_weight_norm_delta(model_a, model_b):
+    norm_layer_dic={}
+    abs_norm_layer_dic={}
+    for (name_a, param_a), (name_b, param_b) in zip(model_a.named_parameters(), model_b.named_parameters()):
+        if name_a != name_b:
+            raise ValueError(f"Parameter names do not match: {name_a} vs {name_b}")
+        diff = param_a - param_b
+        norml2 = torch.norm(diff, p=2)
+        norm_layer_dic[name_a] = norml2 / torch.norm(param_a, p=2)
+        normabs = torch.abs(diff).mean(dtype=torch.float32).item()
+        abs_norm_layer_dic[name_a] = normabs / torch.abs(param_a).mean(dtype=torch.float32).item()
+
+    return norm_layer_dic, abs_norm_layer_dic
 
 def get_grad_norm(model):
     total_norm = 0.0
@@ -321,6 +326,20 @@ def log_h_delta(epoch, prefix = ''):
     if epoch % args.log_dh_interval == 0:
         log[prefix + 'tmp_dh/'] = int_dh_norm_dict
         tmp_pre_act_dict = fetch_h(model)
+    if args.wandb:
+        wandb.log(log)
+
+def linear_weight_delta(epoch, model, linear_model):
+    norm_layer_dic, abs_norm_layer_dic = get_weight_norm_delta(model, linear_model)
+    mtensor = get_model_parameters_tensor(model)
+    lmtensor = get_model_parameters_tensor(linear_model)
+    log = {'epoch': epoch,
+           'linear_dif/l2_linear':torch.norm(lmtensor),
+           'linear_dif/l2_model':torch.norm(mtensor),
+           'linear_dif/l2_all':torch.norm(mtensor - lmtensor) / torch.norm(mtensor),
+           'linear_dif/abs_all':torch.abs(mtensor - lmtensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
+           'linear_dif_layer/l2_':norm_layer_dic,
+           'linear_dif_layer/abs_':abs_norm_layer_dic}
     if args.wandb:
         wandb.log(log)
 
@@ -590,8 +609,6 @@ if __name__=='__main__':
     
     parser.add_argument('--log_val_interval', type=int, default=1,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--log_weight_delta', action='store_true', default=False,
-                        help='how many batches to wait before logging training status')
     parser.add_argument('--log_h_delta', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--log_damping', action='store_true', default=False,
@@ -630,6 +647,8 @@ if __name__=='__main__':
 
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
+
+    parser.add_argument('--linear_training', action='store_true', default=False)
 
     parser.add_argument('--config', default=None,
                         help='config file path')
@@ -731,8 +750,7 @@ if __name__=='__main__':
     print(model)
 
     # Head_Init_Iters
-    if args.log_weight_delta:
-        initial_params = [param.clone() for param in model.parameters()]
+    initial_model = copy.deepcopy(model)
     optimizer = create_optimizer_for_head(args, model, lr = args.init_lr)
     scheduler=None    
     if args.log_h_delta:
@@ -747,8 +765,43 @@ if __name__=='__main__':
     except ValueError as e:
         print(e)
 
-    if args.log_weight_delta:
-        initial_params = [param.clone() for param in model.parameters()]
+    initial_model = copy.deepcopy(model)
+    if args.linear_training:
+        if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
+            optimizer = create_spectral_optimizer(args, model, lr = args.lr)
+        else:
+            optimizer = create_optimizer(args, model, lr = args.lr)
+        scheduler=None
+        if args.head_init_epochs == -1:
+            if args.head_init_iterations != -1:
+                args.head_init_epochs = 1 + args.head_init_iterations // dataset.num_steps_per_epoch
+            elif args.head_init_iterations == -1:
+                args.head_init_epochs = 0
+        if args.scheduler == 'CosineAnnealingLR':
+            scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
+        elif args.scheduler == 'ExponentialLR':
+            scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
+        elif args.scheduler == 'Fraction':
+            scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr / (epoch+1))
+        elif args.scheduler == 'PolynomialLR':
+            scheduler = PolynomialLR(optimizer, total_iters=args.epochs, power=args.sched_power)
+            if args.warmup_epochs>0:
+                scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
+
+        if args.log_h_delta:
+            for i, data in enumerate(dataset.val_loader, 0):
+                inputs, labels = data
+                inputs_for_dh = inputs.to(device)
+                break
+            init_pre_act_dict = fetch_h(model)
+            tmp_pre_act_dict  = fetch_h(model)
+        try:
+            main(epochs=args.epochs, iterations=-1, prefix='LinearTraining', linear_training=True)
+        except ValueError as e:
+            print(e)
+        linear_model = copy.deepcopy(model)
+        model = copy.deepcopy(initial_model)
+
     if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
         optimizer = create_spectral_optimizer(args, model, lr = args.lr)
     else:
