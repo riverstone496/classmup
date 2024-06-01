@@ -46,8 +46,6 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
             nantf = val(epoch, prefix)
             if args.log_h_delta:
                 log_h_delta(epoch, prefix)
-            if args.linear_training and not linear_model and 'init_' not in prefix:
-                linear_weight_delta(epoch, model, linear_model)
             if nantf:
                 break
             if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
@@ -329,11 +327,11 @@ def log_h_delta(epoch, prefix = ''):
     if args.wandb:
         wandb.log(log)
 
-def linear_weight_delta(epoch, model, linear_model):
+def linear_weight_delta( model, linear_model):
     norm_layer_dic, abs_norm_layer_dic = get_weight_norm_delta(model, linear_model)
     mtensor = get_model_parameters_tensor(model)
     lmtensor = get_model_parameters_tensor(linear_model)
-    log = {'epoch': epoch,
+    log = {'width':args.width,
            'linear_dif/l2_linear':torch.norm(lmtensor),
            'linear_dif/l2_model':torch.norm(mtensor),
            'linear_dif/l2_all':torch.norm(mtensor - lmtensor) / torch.norm(mtensor),
@@ -832,6 +830,7 @@ if __name__=='__main__':
         tmp_pre_act_dict  = fetch_h(model)
     try:
         main(epochs=args.epochs, iterations=-1, prefix='')
+        linear_weight_delta( model, linear_model)
     except ValueError as e:
         print(e)
     
