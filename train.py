@@ -864,7 +864,8 @@ if __name__=='__main__':
         tmp_pre_act_dict  = fetch_h(model)
     try:
         main(epochs=args.epochs, iterations=-1, prefix='')
-        linear_weight_delta( model, linear_model)
+        if args.linear_training:
+            linear_weight_delta( model, linear_model)
     except ValueError as e:
         print(e)
     
@@ -881,5 +882,6 @@ if __name__=='__main__':
         if args.population_coding:
             save_dict['orthogonal_matrix'] = orthogonal_matrix
         torch.save(save_dict, folder_path)
+        print(f"Model Saved to {folder_path}")
     
     wandb.finish()

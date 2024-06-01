@@ -21,6 +21,7 @@ from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
 import random
+import copy
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -35,7 +36,7 @@ job_id = os.environ.get('SLURM_JOBID')
 if job_id is not None:
     os.environ["WANDB_HOST"] = job_id
 
-def main(epochs, iterations = -1, prefix = ''):
+def main(epochs, iterations = -1, prefix = '', linear_training = False):
     total_train_time=0
 
     # First Acc
@@ -47,7 +48,7 @@ def main(epochs, iterations = -1, prefix = ''):
 
     for epoch in range(1, epochs + 1):
         start = time.time()
-        train(epoch, prefix, iterations, multihead=args.multihead)
+        train(epoch, prefix, iterations, multihead=args.multihead, linear_training=linear_training)
         total_train_time += time.time() - start
         trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_')
         val(epoch, pretrained_dataset, prefix+'pretrained_')
@@ -111,8 +112,8 @@ def val(epoch, dataset, prefix = '', multihead=False):
                prefix + 'iteration': epoch * dataset.num_steps_per_epoch,
                prefix + 'val_loss': test_loss,
                prefix + 'val_accuracy': test_accuracy,
-               prefix + 'max_validation_acc':max_validation_acc,
-               prefix + 'min_validation_loss':min_validation_loss}
+               prefix + 'max_val_accuracy':max_validation_acc,
+               prefix + 'min_val_loss':min_validation_loss}
         wandb.log(log)
     print('Epoch {:.0f} = Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         epoch, test_loss, correct, len(dataset.val_loader.dataset), test_accuracy))
@@ -166,7 +167,7 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
                prefix + 'iteration': (epoch) * dataset.num_steps_per_epoch,
                prefix + 'train_loss_all': train_loss,
                prefix + 'train_accuracy_all': train_accuracy,
-               prefix + 'max_train_acc_all':max_train_acc_all,
+               prefix + 'max_train_accuracy_all':max_train_acc_all,
                prefix + 'min_train_loss_all':min_train_loss_all}
         wandb.log(log)
     print('Epoch {:.0f} = Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
@@ -177,7 +178,7 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
         return True
     return train_accuracy
 
-def train(epoch, prefix = '', train_iterations=-1, multihead=False):
+def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_training = False):
     global max_train_acc,min_train_loss
     optimizer.zero_grad(set_to_none=True)
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
@@ -204,16 +205,27 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
                 loss_func = torch.nn.MSELoss()
             t2 = MSE_label(x, t)
 
-        if multihead:
-            y = model(x, task=1)
+        if linear_training:
+            if multihead:
+                y = initial_model(x, task=1)
+            else:
+                y = initial_model(x)
         else:
-            y = model(x)
+            if multihead:
+                y = model(x, task=1)
+            else:
+                y = model(x)
         loss = loss_func(y,t2)
         loss.backward()
+        if linear_training:
+            for (name_a, param_init), (name_b, param_model) in zip(initial_model.named_parameters(), model.named_parameters()):
+                if param_init.grad is not None:
+                    param_model.grad = param_init.grad.clone()
 
         if batch_idx%args.accumulate_iters == args.accumulate_iters-1:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
+            initial_model.zero_grad() 
         
         if batch_idx%100==0 and args.wandb:
             if args.population_coding:
@@ -224,7 +236,9 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(x), len(dataset.train_loader.dataset),
                 100. * batch_idx / dataset.num_steps_per_epoch, float(loss)))
-            l1_norm, l2_norm = get_weight_norm(model)
+            with torch.no_grad():
+                init_tensor = get_model_parameters_tensor(initial_model)
+                mtensor = get_model_parameters_tensor(model)
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:
@@ -233,23 +247,35 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False):
                    prefix + 'iteration': (epoch-1) * dataset.num_steps_per_epoch+batch_idx,
                    prefix + 'train_loss': float(loss),
                    prefix + 'train_accuracy': float(acc),
-                   prefix + 'max_train_acc':max_train_acc,
+                   prefix + 'max_train_accuracy':max_train_acc,
                    prefix + 'min_train_loss':min_train_loss,
+                   prefix + 'dif/l2_':torch.norm(mtensor - init_tensor) / torch.norm(mtensor),
+                    prefix + 'dif/abs_':torch.abs(mtensor - init_tensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
                    }
             wandb.log(log)
 
     if scheduler is not None:
         scheduler.step(epoch=epoch)
 
-# 学習率を調整する関数
-def adjust_learning_rate(optimizer, lr):
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+def get_model_parameters_tensor(model):
+    parameters = []
+    for param in model.parameters():
+        parameters.append(param.view(-1))  # Flatten each parameter and add to the list
+    return torch.cat(parameters)
 
-def get_weight_norm(model):
-    l1_norm = sum(p.abs().sum() for p in model.parameters())
-    l2_norm = sum(p.pow(2).sum() for p in model.parameters())
-    return l1_norm.item(), (l2_norm.item()**0.5)
+def get_weight_norm_delta(model_a, model_b):
+    norm_layer_dic={}
+    abs_norm_layer_dic={}
+    spectral_norm_layer_dic = {}
+    for (name_a, param_a), (name_b, param_b) in zip(model_a.named_parameters(), model_b.named_parameters()):
+        if name_a != name_b:
+            raise ValueError(f"Parameter names do not match: {name_a} vs {name_b}")
+        diff = param_a - param_b
+        norm_layer_dic[name_a] = torch.norm(diff, p=2) / torch.norm(param_a, p=2)
+        abs_norm_layer_dic[name_a] = torch.abs(diff).mean(dtype=torch.float32).item() / torch.abs(param_a).mean(dtype=torch.float32).item()
+        spectral_norm_layer_dic[name_a] = torch.linalg.norm(diff,ord=2) / torch.linalg.norm(param_a,ord=2)
+
+    return norm_layer_dic, abs_norm_layer_dic, spectral_norm_layer_dic
 
 def get_grad_norm(model):
     total_norm = 0.0
@@ -332,6 +358,22 @@ def log_h_delta(epoch, prefix = ''):
     if epoch % args.log_dh_interval == 0:
         log[prefix + 'tmp_dh/'] = int_dh_norm_dict
         tmp_pre_act_dict = fetch_h(model, args.multihead)
+    if args.wandb:
+        wandb.log(log)
+
+def linear_weight_delta( model, linear_model):
+    norm_layer_dic, abs_norm_layer_dic, spectral_norm_layer_dic = get_weight_norm_delta(model, linear_model)
+    mtensor = get_model_parameters_tensor(model)
+    lmtensor = get_model_parameters_tensor(linear_model)
+    log = {'width':args.width,
+           'epoch':args.epochs,
+           'linear_dif/l2_linear':torch.norm(lmtensor),
+           'linear_dif/l2_model':torch.norm(mtensor),
+           'linear_dif/l2_all':torch.norm(mtensor - lmtensor) / torch.norm(mtensor),
+           'linear_dif/abs_all':torch.abs(mtensor - lmtensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
+           'linear_dif_layer/l2_':norm_layer_dic,
+           'linear_dif_layer/abs_':abs_norm_layer_dic,
+           'linear_dif_layer/spectral_':spectral_norm_layer_dic}
     if args.wandb:
         wandb.log(log)
 
@@ -645,6 +687,8 @@ if __name__=='__main__':
     parser.add_argument('--chi_fixed', action='store_true', default=False)
     parser.add_argument('--spaese_coding_mse', action='store_true', default=False)
     parser.add_argument('--RandomAffine', action='store_true', default=False)
+    parser.add_argument('--linear_training', action='store_true', default=False)
+
     parser.add_argument('--config', default=None,
                         help='config file path')
 
@@ -746,6 +790,46 @@ if __name__=='__main__':
             pretrained_orthogonal_matrix = checkpoint['pretrained_orthogonal_matrix'][:args.task1_class_head, :]
             orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task2_class_head, :]
 
+    initial_model = copy.deepcopy(model)
+    if args.linear_training:
+        if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
+            optimizer = create_spectral_optimizer(args, model, lr = args.lr)
+        else:
+            optimizer = create_optimizer(args, model, lr = args.lr)
+        scheduler=None
+        if args.head_init_epochs == -1:
+            if args.head_init_iterations != -1:
+                args.head_init_epochs = 1 + args.head_init_iterations // dataset.num_steps_per_epoch
+            elif args.head_init_iterations == -1:
+                args.head_init_epochs = 0
+        if args.scheduler == 'CosineAnnealingLR':
+            scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
+        elif args.scheduler == 'ExponentialLR':
+            scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
+        elif args.scheduler == 'Fraction':
+            scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr / (epoch+1))
+        elif args.scheduler == 'PolynomialLR':
+            scheduler = PolynomialLR(optimizer, total_iters=args.epochs, power=args.sched_power)
+            if args.warmup_epochs>0:
+                scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
+
+        if args.log_h_delta:
+            for i, data in enumerate(dataset.val_loader, 0):
+                inputs, labels = data
+                inputs_for_dh = inputs.to(device)
+                break
+            init_pre_act_dict = fetch_h(model, args.multihead)
+            tmp_pre_act_dict  = fetch_h(model, args.multihead)
+        try:
+            main(epochs=args.epochs, iterations=-1, prefix='LinearTraining/', linear_training=True)
+        except ValueError as e:
+            print(e)
+
+        linear_model = copy.deepcopy(model)
+        model = copy.deepcopy(initial_model)
+
+
+
     if args.log_weight_delta:
         initial_params = [param.clone() for param in model.parameters()]
     if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
@@ -778,6 +862,8 @@ if __name__=='__main__':
         tmp_pre_act_dict  = fetch_h(model, args.multihead)
     try:
         main(epochs=args.epochs, iterations=-1, prefix='')
+        if args.linear_training:
+            linear_weight_delta( model, linear_model)
     except ValueError as e:
         print(e)
     
