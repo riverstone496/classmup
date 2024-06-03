@@ -226,8 +226,13 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             initial_model.zero_grad() 
-        
+
         if batch_idx%100==0 and args.wandb:
+            if multihead:
+                y = model(x, task=1)
+            else:
+                y = model(x)
+            loss = loss_func(y,t2)
             if args.population_coding:
                 pred = (y@orthogonal_matrix.T).data.max(1)[1]
             else:
@@ -239,6 +244,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
             with torch.no_grad():
                 init_tensor = get_model_parameters_tensor(initial_model)
                 mtensor = get_model_parameters_tensor(model)
+                
             if acc>max_train_acc:
                 max_train_acc=acc
             if loss<min_train_loss:

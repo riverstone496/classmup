@@ -197,6 +197,10 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
             initial_model.zero_grad() 
         
         if batch_idx%100==0 and args.wandb:
+
+            y = model(x)
+            loss = loss_func(y,t2)
+            
             if args.class_bulk:
                 pred = y.data.max(1)[1] % dataset_original_class 
             elif args.population_coding:
