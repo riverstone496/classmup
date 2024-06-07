@@ -616,6 +616,8 @@ if __name__=='__main__':
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
                         help='file location to load base shapes from')
     parser.add_argument('--ckpt_folder', type=str, default='./ckpts/premutate_mlp_mnist/')
+    parser.add_argument('--pretrained_ckpt_folder', type=str, default='./ckpts/mlp_ln_split_cifar_width/')
+    parser.add_argument('--load_from_pretrained_ckpt_folder', action='store_true', default=False)
 
     parser.add_argument('--b_input', type=float, default=0.5,
                         help='learning rate')
@@ -793,9 +795,12 @@ if __name__=='__main__':
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
 
     if args.pretrained_epochs > 0:
-        # linear probingをtsizeで行ったfile name
-        file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_hp_' + str(args.head_init_epochs) +'_pretrained_param_' + str(args.pretrained_parametrization)+'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
-        folder_path = os.path.join(args.ckpt_folder, file_name)
+        if args.load_from_pretrained_ckpt_folder:
+            file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_param_' + str(args.pretrained_parametrization) + '_tsize_' + str(args.pretrained_train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
+            folder_path = os.path.join(args.pretrained_ckpt_folder, file_name)
+        else:
+            file_name = str(args.model) + '_' + str(args.dataset)  + '_wid_' + str(args.width) + '_ep_' + str(args.pretrained_epochs) + '_hp_' + str(args.head_init_epochs) +'_pretrained_param_' + str(args.pretrained_parametrization)+'_param_' + str(args.parametrization) + '_tsize_' + str(args.train_size) + '_lr_' + str(args.pretrained_lr) + '_loss_' + str(args.loss_type) + '_act_' + str(args.activation) + '.pt'
+            folder_path = os.path.join(args.ckpt_folder, file_name)
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         if args.population_coding:
