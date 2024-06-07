@@ -13,7 +13,6 @@ import torch.nn.functional as F
 import os,json
 import utils.dataset
 from models.create_model import create_model,initialize_weight, MultiHeadModel
-from utils.damping import set_damping
 import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
