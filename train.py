@@ -9,12 +9,12 @@ import math
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
-from functorch import jvp, make_functional_with_buffers
+from functorch import make_functional_with_buffers
 
 import os,json
 import utils.dataset
 from models.create_model import create_model,initialize_weight, create_finetune_model, MultiHeadModel
-from utils.damping import set_damping
+from asdl.kernel import empirical_class_wise_direct_ntk
 import wandb
 from timm.scheduler import CosineLRScheduler
 from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
@@ -23,6 +23,7 @@ from utils.create_optim import create_optimizer, create_optimizer_for_head, crea
 import warmup_scheduler
 import copy
 from models.linear_model import LinearizedModel
+from utils.set_mup import muP_set
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -49,6 +50,7 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
                 nantf = val(epoch, prefix)
                 if args.log_h_delta:
                     log_h_delta(epoch, prefix)
+                delta_ntk(epoch)
                 if nantf:
                     break
                 if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
@@ -354,197 +356,46 @@ def linear_weight_delta( model, linear_model):
     if args.wandb:
         wandb.log(log)
 
+def delta_ntk(epoch):
+    for batch_idx, (x, t) in enumerate(dataset.train_loader):
+        model.train()
+        x, t = x.to(device), t.to(device)
+        if args.loss_type == 'cross_entropy':
+            if args.noise_eps>0 or args.class_reduction:
+                loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
+                t2 = t
+            else:
+                loss_func = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+                t2 = t
+        elif args.loss_type=='mse':
+            if args.noise_eps>0 or args.class_reduction:
+                loss_func = CustomMSELossWithL2Reg(model=model, lambda_reg=0, reduction=args.class_reduction_type)
+            else:
+                loss_func = torch.nn.MSELoss()
+            t2 = MSE_label(x, t)
+
+        y = model(x)
+        loss1 = loss_func(y,t2)
+        loss1.backward()
+        y2 = initial_model(x)
+        loss2 = loss_func(y2,t2)
+        loss2.backward()
+        ntk = empirical_class_wise_direct_ntk(model, x)
+        ntk_init = empirical_class_wise_direct_ntk(initial_model, x)
+        model.zero_grad()
+        initial_model.zero_grad()
+        ntk_del = torch.norm(ntk-ntk_init) / torch.norm(ntk_init) 
+        wandb.log({
+            'epoch':epoch,
+            'ntk_del':ntk_del
+        })
+        return ntk_del
+
 class ParseAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         print('%r %r %r' % (namespace, values, option_string))
         values = list(map(int, values.split()))
         setattr(namespace, self.dest, values)
-
-def muP_set(args):
-    if args.parametrization == 'SP':
-        args.output_nonzero = True
-        args.b_output=1/2
-        args.b_input=1/2
-        args.b_hidden=1/2
-        args.c_output=0
-        args.c_input=0
-        args.c_hidden=0
-    if args.parametrization == 'SP_output_zero':
-        args.output_nonzero = False
-        args.b_output=1/2
-        args.b_input=1/2
-        args.b_hidden=1/2
-        args.c_output=0
-        args.c_input=0
-        args.c_hidden=0
-    if args.parametrization == 'SP_LR':
-        if args.optim == 'sgd':
-            args.b_output=1/2
-            args.b_input=1/2
-            args.b_hidden=1/2
-            args.c_output=1
-            args.c_input=1
-            args.c_hidden=1
-        if 'kfac' in args.optim:
-            args.b_output=1/2
-            args.b_input=1/2
-            args.b_hidden=1/2
-            args.c_output=0
-            args.c_input=0
-            args.c_hidden=0
-    if args.parametrization == 'UP' or args.parametrization == 'NTK':
-        args.output_nonzero = True
-        if args.optim == 'sgd':
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1
-            args.c_hidden=1
-            args.c_input=0
-        if 'kfac' in args.optim:
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=0
-        if args.optim == 'shampoo':
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1/2
-            args.c_hidden=1/2
-            args.c_input=0
-        if 'foof' in args.optim:
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=0
-    if args.parametrization == 'UP_zero' or args.parametrization == 'NTK_zero':
-        args.output_nonzero = False
-        if args.optim == 'sgd':
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1
-            args.c_hidden=1
-            args.c_input=0
-        if 'kfac' in args.optim:
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=0
-        if args.optim == 'shampoo':
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1/2
-            args.c_hidden=1/2
-            args.c_input=0
-        if 'foof' in args.optim:
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=0
-    if args.parametrization == 'muP':
-        args.output_nonzero = True
-        if args.optim == 'sgd':
-            args.b_output=1
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1
-            args.c_hidden=0
-            args.c_input=-1
-        if args.optim == 'adam':
-            args.b_output=1
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1
-            args.c_hidden=1
-            args.c_input=0
-        if 'kfac' in args.optim:
-            args.b_output=1
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=0
-        if args.optim == 'shampoo':
-            args.b_output=1
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1/2
-            args.c_hidden=0
-            args.c_input=-1/2
-        if 'foof' in args.optim:
-            args.b_output=1
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=-1
-            args.c_input=-1
-    if args.parametrization == 'muP_output_zero' or args.parametrization == 'muP_zero':
-        args.output_nonzero = False
-        if args.optim == 'sgd':
-            args.b_output=128
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1
-            args.c_hidden=0
-            args.c_input=-1
-        if 'kfac' in args.optim:
-            args.b_output=128
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=0
-        if args.optim == 'shampoo':
-            args.b_output=128
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=1/2
-            args.c_hidden=0
-            args.c_input=-1/2
-        if 'foof' in args.optim:
-            args.b_output=128
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=-1
-            args.c_input=-1
-    if args.parametrization == 'class_muP':
-        if args.optim == 'sgd':
-            args.b_output=1/2
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=-1
-    if args.parametrization == 'class_muP_output_zero':
-        args.output_nonzero = False
-        if args.optim == 'sgd':
-            args.b_output=128
-            args.b_hidden=1/2
-            args.b_input=1/2
-            args.c_output=0
-            args.c_hidden=0
-            args.c_input=-1
-    if args.parametrization == 'kfac_muP':
-        args.b_output=1
-        args.b_hidden=1/2
-        args.b_input=1/2
-        args.c_output=0
-        args.c_hidden=0
-        args.c_input=0
-    if args.parametrization == 'Spectral_output_zero':
-        args.output_nonzero = False
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -831,13 +682,12 @@ if __name__=='__main__':
             if args.warmup_epochs>0:
                 scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
 
-        if args.log_h_delta:
-            for i, data in enumerate(dataset.val_loader, 0):
-                inputs, labels = data
-                inputs_for_dh = inputs.to(device)
-                break
-            init_pre_act_dict = fetch_h(model)
-            tmp_pre_act_dict  = fetch_h(model)
+        for i, data in enumerate(dataset.val_loader, 0):
+            inputs, labels = data
+            inputs_for_dh = inputs.to(device)
+            break
+        init_pre_act_dict = fetch_h(model)
+        tmp_pre_act_dict  = fetch_h(model)
         try:
             main(epochs=args.epochs, iterations=-1, prefix='LinearTraining/', linear_training=True)
         except ValueError as e:
@@ -866,13 +716,12 @@ if __name__=='__main__':
         if args.warmup_epochs>0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
 
-    if args.log_h_delta:
-        for i, data in enumerate(dataset.val_loader, 0):
-            inputs, labels = data
-            inputs_for_dh = inputs.to(device)
-            break
-        init_pre_act_dict = fetch_h(model)
-        tmp_pre_act_dict  = fetch_h(model)
+    for i, data in enumerate(dataset.val_loader, 0):
+        inputs, labels = data
+        inputs_for_dh = inputs.to(device)
+        break
+    init_pre_act_dict = fetch_h(model)
+    tmp_pre_act_dict  = fetch_h(model)
     try:
         main(epochs=args.epochs, iterations=-1, prefix='')
         if args.linear_training:
