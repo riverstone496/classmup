@@ -50,12 +50,12 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
                 nantf = val(epoch, prefix)
                 if args.log_h_delta:
                     log_h_delta(epoch, prefix)
-                delta_ntk(epoch)
                 if nantf:
                     break
                 if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
                     wandb.run.summary['total_epochs_task'] = epoch
                     break
+        delta_ntk(epoch)
     print(f'total_train_time: {total_train_time:.2f}s')
     if args.epochs != 0:
         print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
@@ -356,9 +356,12 @@ def linear_weight_delta( model, linear_model):
     if args.wandb:
         wandb.log(log)
 
-def delta_ntk(epoch):
+def delta_ntk(epoch, model, initial_model, dataset):
+    model.zero_grad()
+    initial_model.zero_grad()
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
         model.train()
+        initial_model.train()
         x, t = x.to(device), t.to(device)
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
