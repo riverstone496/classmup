@@ -20,8 +20,10 @@ from torch.optim.lr_scheduler import LambdaLR, PolynomialLR
 from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
-import random
+from functorch import make_functional_with_buffers
+
 import copy
+from models.linear_model import LinearizedModel
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -267,8 +269,15 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
         scheduler.step(epoch=epoch)
 
 def get_model_parameters_tensor(model):
+    if hasattr(model, 'params'):
+        params = model.params
+    else:
+        _, params, _ = make_functional_with_buffers(
+                model, disable_autograd_tracking=True
+            )
+        params = torch.nn.ParameterList(params)
     parameters = []
-    for param in model.parameters():
+    for param in params:
         parameters.append(param.view(-1))  # Flatten each parameter and add to the list
     return torch.cat(parameters)
 
@@ -809,6 +818,7 @@ if __name__=='__main__':
 
     initial_model = copy.deepcopy(model)
     if args.linear_training:
+        model = LinearizedModel(model)
         if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
             optimizer = create_spectral_optimizer(args, model, lr = args.lr)
         else:

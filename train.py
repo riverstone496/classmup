@@ -9,6 +9,7 @@ import math
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
+from functorch import jvp, make_functional_with_buffers
 
 import os,json
 import utils.dataset
@@ -21,6 +22,7 @@ from utils.loss_type import CustomCrossEntropyLoss, CustomMSELossWithL2Reg
 from utils.create_optim import create_optimizer, create_optimizer_for_head, create_spectral_optimizer
 import warmup_scheduler
 import copy
+from models.linear_model import LinearizedModel
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -234,8 +236,15 @@ def train(epoch, prefix = '', train_iterations=-1, linear_training = False):
         scheduler.step(epoch=epoch)
 
 def get_model_parameters_tensor(model):
+    if hasattr(model, 'params'):
+        params = model.params
+    else:
+        _, params, _ = make_functional_with_buffers(
+                model, disable_autograd_tracking=True
+            )
+        params = torch.nn.ParameterList(params)
     parameters = []
-    for param in model.parameters():
+    for param in params:
         parameters.append(param.view(-1))  # Flatten each parameter and add to the list
     return torch.cat(parameters)
 
@@ -245,7 +254,8 @@ def get_weight_norm_delta(model_a, model_b):
     spectral_norm_layer_dic = {}
     for (name_a, param_a), (name_b, param_b) in zip(model_a.named_parameters(), model_b.named_parameters()):
         if name_a != name_b:
-            raise ValueError(f"Parameter names do not match: {name_a} vs {name_b}")
+            print(f"Parameter names do not match: {name_a} vs {name_b}")
+            return
         diff = param_a - param_b
         norm_layer_dic[name_a] = torch.norm(diff, p=2) / torch.norm(param_a, p=2)
         abs_norm_layer_dic[name_a] = torch.abs(diff).mean(dtype=torch.float32).item() / torch.abs(param_a).mean(dtype=torch.float32).item()
@@ -333,7 +343,6 @@ def log_h_delta(epoch, prefix = ''):
         wandb.log(log)
 
 def linear_weight_delta( model, linear_model):
-    norm_layer_dic, abs_norm_layer_dic, spectral_norm_layer_dic = get_weight_norm_delta(model, linear_model)
     mtensor = get_model_parameters_tensor(model)
     lmtensor = get_model_parameters_tensor(linear_model)
     log = {'width':args.width,
@@ -341,10 +350,7 @@ def linear_weight_delta( model, linear_model):
            'linear_dif/l2_linear':torch.norm(lmtensor),
            'linear_dif/l2_model':torch.norm(mtensor),
            'linear_dif/l2_all':torch.norm(mtensor - lmtensor) / torch.norm(mtensor),
-           'linear_dif/abs_all':torch.abs(mtensor - lmtensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
-           'linear_dif_layer/l2_':norm_layer_dic,
-           'linear_dif_layer/abs_':abs_norm_layer_dic,
-           'linear_dif_layer/spectral_':spectral_norm_layer_dic}
+           'linear_dif/abs_all':torch.abs(mtensor - lmtensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),}
     if args.wandb:
         wandb.log(log)
 
@@ -596,7 +602,7 @@ if __name__=='__main__':
     parser.add_argument('--init_momentum', type=float, default=0,
                         help='learning rate')
     
-    parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--weight_decay', type=float, default=1e-3)
     parser.add_argument('--lambda_reg', type=float, default=0)
     parser.add_argument('--optim', default='sgd')
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
@@ -803,6 +809,7 @@ if __name__=='__main__':
 
     initial_model = copy.deepcopy(model)
     if args.linear_training:
+        model = LinearizedModel(model)
         if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
             optimizer = create_spectral_optimizer(args, model, lr = args.lr)
         else:
