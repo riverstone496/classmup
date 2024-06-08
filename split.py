@@ -43,28 +43,30 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
     total_train_time=0
 
     # First Acc
-    trainloss_all(0, pretrained_dataset, prefix+'pretrained_')
-    val(0, pretrained_dataset, prefix+'pretrained_')
-    trainloss_all(0, dataset, prefix, multihead=args.multihead)
-    val(0, dataset, prefix, multihead=args.multihead)
+    if not linear_training:
+        trainloss_all(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
+        val(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
+    trainloss_all(0, dataset, prefix, multihead=args.multihead, linear_training=linear_training)
+    val(0, dataset, prefix, multihead=args.multihead, linear_training=linear_training)
     wandb.run.summary["first_val_accuracy"] = max_validation_acc
 
     for epoch in range(1, epochs + 1):
         start = time.time()
         train(epoch, prefix, iterations, multihead=args.multihead, linear_training=linear_training)
         total_train_time += time.time() - start
-        trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_')
-        val(epoch, pretrained_dataset, prefix+'pretrained_')
-        train_accuracy = trainloss_all(epoch, dataset, prefix, multihead=args.multihead)
-        nantf = val(epoch, dataset, prefix, multihead=args.multihead)
+        if not linear_training:
+            trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training)
+            val(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training)
+        train_accuracy = trainloss_all(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
+        nantf = val(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
         if args.log_h_delta:
-            log_h_delta(epoch, prefix)
+            log_h_delta(epoch, prefix, linear_training)
         if nantf:
             break
         if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
             wandb.run.summary['total_epochs_task'] = epoch
             break
-        delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead)
+        delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, linear_training=linear_training)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
@@ -73,7 +75,7 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         wandb.run.summary['avg_epoch_time'] = total_train_time / args.epochs
         wandb.run.summary['avg_step_time'] = total_train_time / args.epochs / dataset.num_steps_per_epoch
 
-def val(epoch, dataset, prefix = '', multihead=False):
+def val(epoch, dataset, prefix = '', multihead=False, linear_training=False):
     global max_validation_acc,min_validation_loss
     model.eval()
     test_loss = 0
@@ -83,10 +85,12 @@ def val(epoch, dataset, prefix = '', multihead=False):
             data, target = data.to(device), target.to(device)
             if 'pretrained' not in prefix:
                 target -= args.task1_class_head
-            if multihead and 'pretrained' not in prefix:
+            if linear_training:
+                output = model(data)
+            elif multihead and 'pretrained' not in prefix:
                 output = model(data, task=1)
             else:
-                output = model(data)
+                output = model(data, task=0)
             if args.population_coding:
                 if 'pretrained' in prefix:
                     target2 = pretrained_orthogonal_matrix[target]
@@ -127,7 +131,7 @@ def val(epoch, dataset, prefix = '', multihead=False):
         return True
     return False
 
-def trainloss_all(epoch, dataset, prefix = '', multihead=False):
+def trainloss_all(epoch, dataset, prefix = '', multihead=False, linear_training=False):
     global max_train_acc_all,min_train_loss_all
     model.eval()
     train_loss = 0
@@ -137,10 +141,12 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False):
             data, target = data.to(device), target.to(device)
             if 'pretrained' not in prefix:
                 target -= args.task1_class_head
-            if multihead and 'pretrained' not in prefix:
+            if linear_training:
+                output = model(data)
+            elif multihead and 'pretrained' not in prefix:
                 output = model(data, task=1)
             else:
-                output = model(data)
+                output = model(data, task=0)
             if args.population_coding:
                 if 'pretrained' in prefix:
                     target2 = pretrained_orthogonal_matrix[target]
@@ -210,10 +216,7 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
             t2 = MSE_label(x, t)
 
         if linear_training:
-            if multihead:
-                y = initial_model(x, task=1)
-            else:
-                y = initial_model(x)
+            y = initial_model(x)
         else:
             if multihead:
                 y = model(x, task=1)
@@ -232,7 +235,9 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
             initial_model.zero_grad() 
 
         if batch_idx%100==0 and args.wandb:
-            if multihead:
+            if linear_training:
+                y=model(x)
+            elif multihead:
                 y = model(x, task=1)
             else:
                 y = model(x)
@@ -289,7 +294,8 @@ def get_weight_norm_delta(model_a, model_b, spectral=True):
     spectral_norm_layer_dic = {}
     for (name_a, param_a), (name_b, param_b) in zip(model_a.named_parameters(), model_b.named_parameters()):
         if name_a != name_b:
-            raise ValueError(f"Parameter names do not match: {name_a} vs {name_b}")
+            print(f"Parameter names do not match: {name_a} vs {name_b}")
+            break
         diff = param_a - param_b
         norm_layer_dic[name_a] = torch.norm(diff, p=2) / torch.norm(param_a, p=2)
         abs_norm_layer_dic[name_a] = torch.abs(diff).mean(dtype=torch.float32).item() / torch.abs(param_a).mean(dtype=torch.float32).item()
@@ -346,9 +352,9 @@ def register_fhook(model: torch.nn.Module):
         module.register_forward_hook(forward_hook)
     return model
 
-def fetch_h(model, multihead=False):
+def fetch_h(model, multihead=False, linear_training=False):
     model = register_fhook(model)
-    if multihead:
+    if multihead and not linear_training:
         y = model(inputs_for_dh, task=1)
     else:
         y = model(inputs_for_dh)
@@ -362,9 +368,9 @@ def fetch_h(model, multihead=False):
             pre_act_dict[name] = module.out_data
     return pre_act_dict
 
-def log_h_delta(epoch, prefix = ''):
+def log_h_delta(epoch, prefix = '', linear_training=False):
     global tmp_pre_act_dict
-    pre_act_dict = fetch_h(model, args.multihead)
+    pre_act_dict = fetch_h(model, args.multihead, linear_training)
     h_norm_dict = {}
     dh_norm_dict = {}
     int_dh_norm_dict = {}
@@ -380,7 +386,7 @@ def log_h_delta(epoch, prefix = ''):
            prefix + 'dh/': dh_norm_dict,}
     if epoch % args.log_dh_interval == 0:
         log[prefix + 'tmp_dh/'] = int_dh_norm_dict
-        tmp_pre_act_dict = fetch_h(model, args.multihead)
+        tmp_pre_act_dict = fetch_h(model, args.multihead, linear_training)
     if args.wandb:
         wandb.log(log)
 
@@ -400,7 +406,7 @@ def linear_weight_delta( model, linear_model):
     if args.wandb:
         wandb.log(log)
 
-def delta_ntk(epoch, model, initial_model, dataset, multihead):
+def delta_ntk(epoch, model, initial_model, dataset, multihead, linear_training=False):
     model.zero_grad()
     initial_model.zero_grad()
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
@@ -422,12 +428,15 @@ def delta_ntk(epoch, model, initial_model, dataset, multihead):
                 loss_func = torch.nn.MSELoss()
             t2 = MSE_label(x, t)
 
-        if multihead:
+        if linear_training:
+            y = model(x)
+            y2 = initial_model(x)
+        elif multihead:
             y = model(x, task=1)
             y2 = initial_model(x, task=1)
         else:
-            y = model(x)
-            y2 = initial_model(x)
+            y = model(x, task=0)
+            y2 = initial_model(x, task=0)
         loss1 = loss_func(y,t2)
         loss1.backward()
         loss2 = loss_func(y2,t2)
@@ -705,6 +714,7 @@ if __name__=='__main__':
         if args.population_coding:
             pretrained_orthogonal_matrix = checkpoint['pretrained_orthogonal_matrix'][:args.task1_class_head, :]
             orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task2_class_head, :]
+    model.default_task = 1
 
     initial_model = copy.deepcopy(model)
     if args.linear_training:
@@ -735,8 +745,8 @@ if __name__=='__main__':
                 inputs, labels = data
                 inputs_for_dh = inputs.to(device)
                 break
-            init_pre_act_dict = fetch_h(model, args.multihead)
-            tmp_pre_act_dict  = fetch_h(model, args.multihead)
+            init_pre_act_dict = fetch_h(model, args.multihead, True)
+            tmp_pre_act_dict  = fetch_h(model, args.multihead, True)
         try:
             main(epochs=args.epochs, iterations=-1, prefix='LinearTraining/', linear_training=True)
         except ValueError as e:

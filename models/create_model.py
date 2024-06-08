@@ -141,6 +141,7 @@ def create_finetune_model(num_classes, args):
 class MultiHeadModel(nn.Module):
     def __init__(self, args, img_size, num_classes, num_channels):
         super(MultiHeadModel, self).__init__()
+        self.default_task = 0
         if args.use_cifar_model:
             self.base_model = create_model(img_size, num_classes, num_channels, args)
         elif args.use_fractal_model:
@@ -169,7 +170,9 @@ class MultiHeadModel(nn.Module):
             if 'muP' in args.task2_parametrization or 'Spectral' in args.task2_parametrization:
                 self.head2.weight.data /= (self.base_model.num_features / (args.task2_class))**(1/2)            
 
-    def forward(self, x, task=0):
+    def forward(self, x, task=None):
+        if task == None:
+            task = self.default_task
         x = self.base_model(x)
         if task == 0:
             x = self.head1(x)
