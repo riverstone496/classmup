@@ -34,18 +34,20 @@ max_train_acc=0
 min_train_loss=np.inf
 max_train_acc_all=0
 min_train_loss_all=np.inf
+pretrained_val_acc = 0
+pretrained_train_acc = 0
 
 job_id = os.environ.get('SLURM_JOBID')
 if job_id is not None:
     os.environ["WANDB_HOST"] = job_id
 
 def main(epochs, iterations = -1, prefix = '', linear_training = False):
+    global pretrained_train_acc, pretrained_val_acc
     total_train_time=0
-
     # First Acc
     if not linear_training:
-        trainloss_all(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
-        val(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
+        pretrained_train_acc = trainloss_all(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
+        pretrained_val_acc = val(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
     trainloss_all(0, dataset, prefix, multihead=args.multihead, linear_training=linear_training)
     val(0, dataset, prefix, multihead=args.multihead, linear_training=linear_training)
     wandb.run.summary["first_val_accuracy"] = max_validation_acc
@@ -58,10 +60,10 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
             trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training)
             val(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training)
         train_accuracy = trainloss_all(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
-        nantf = val(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
+        val_accuracy = val(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
         if args.log_h_delta:
             log_h_delta(epoch, prefix, linear_training)
-        if nantf:
+        if val_accuracy == -1:
             break
         if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
             wandb.run.summary['total_epochs_task'] = epoch
@@ -127,14 +129,16 @@ def val(epoch, dataset, prefix = '', multihead=False, linear_training=False):
                prefix + 'val_accuracy': test_accuracy,
                prefix + 'max_val_accuracy':max_validation_acc,
                prefix + 'min_val_loss':min_validation_loss}
+        if pretrained_train_acc != 0 and 'pretrained' in prefix:
+            log[prefix + 'val_accuracy_forgetting'] = pretrained_val_acc - test_accuracy
         wandb.log(log)
     print('Epoch {:.0f} = Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         epoch, test_loss, correct, len(dataset.val_loader.dataset), test_accuracy))
 
     if math.isnan(test_loss):
         print('Error: Train loss is nan', file=sys.stderr)
-        return True
-    return False
+        return -1
+    return test_accuracy
 
 def trainloss_all(epoch, dataset, prefix = '', multihead=False, linear_training=False):
     global max_train_acc_all,min_train_loss_all
@@ -184,13 +188,15 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False, linear_training=
                prefix + 'train_accuracy_all': train_accuracy,
                prefix + 'max_train_accuracy_all':max_train_acc_all,
                prefix + 'min_train_loss_all':min_train_loss_all}
+        if pretrained_train_acc != 0 and 'pretrained' in prefix:
+            log[prefix + 'train_accuracy_all_forgetting'] = pretrained_train_acc - train_accuracy
         wandb.log(log)
     print('Epoch {:.0f} = Train all set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         epoch, train_loss, correct, len(dataset.val_loader.dataset), train_accuracy))
 
     if math.isnan(train_loss):
         print('Error: Train loss is nan', file=sys.stderr)
-        return True
+        return -1
     return train_accuracy
 
 def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_training = False):
