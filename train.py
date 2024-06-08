@@ -24,6 +24,7 @@ import warmup_scheduler
 import copy
 from models.linear_model import LinearizedModel
 from utils.set_mup import muP_set
+from torch.optim import SGD, Adam
 
 dataset_options = ['MNIST','CIFAR10','CIFAR100','SVHN','Flowers','Cars', 'FashionMNIST', 'STL10']
 
@@ -490,6 +491,7 @@ if __name__=='__main__':
     parser.add_argument('--output_nonzero', action='store_true', default=False)
     parser.add_argument('--curvature_update_interval', type=int, default=1)
     parser.add_argument('--scheduler', type=str, default=None)
+    parser.add_argument('--linear_scheduler', type=str, default='Fraction')
     parser.add_argument('--sched_power', type=float, default=1,
                         help='sched_power')
     parser.add_argument('--warmup_epochs', type=int, default=0,
@@ -664,23 +666,23 @@ if __name__=='__main__':
     initial_model = copy.deepcopy(model)
     if args.linear_training:
         model = LinearizedModel(model)
-        if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
-            optimizer = create_spectral_optimizer(args, model, lr = args.lr)
-        else:
-            optimizer = create_optimizer(args, model, lr = args.lr)
+        if args.optim == 'sgd':
+            optimizer = SGD(model.parameters(), lr=args.base_width*args.linear_lr / args.width , momentum=args.momentum, weight_decay=args.weight_decay)
+        elif args.optim == 'adam':
+            optimizer = Adam(model.parameters(), lr= args.base_width*args.linear_lr / args.width, weight_decay=args.weight_decay)
         scheduler=None
         if args.head_init_epochs == -1:
             if args.head_init_iterations != -1:
                 args.head_init_epochs = 1 + args.head_init_iterations // dataset.num_steps_per_epoch
             elif args.head_init_iterations == -1:
                 args.head_init_epochs = 0
-        if args.scheduler == 'CosineAnnealingLR':
+        if args.linear_scheduler == 'CosineAnnealingLR':
             scheduler=CosineLRScheduler(optimizer, t_initial=args.epochs,lr_min=0, warmup_t=args.warmup_epochs)
-        elif args.scheduler == 'ExponentialLR':
+        elif args.linear_scheduler == 'ExponentialLR':
             scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr * (0.95 ** epoch))
-        elif args.scheduler == 'Fraction':
+        elif args.linear_scheduler == 'Fraction':
             scheduler = LambdaLR(optimizer, lr_lambda = lambda epoch: args.lr / (epoch+1))
-        elif args.scheduler == 'PolynomialLR':
+        elif args.linear_scheduler == 'PolynomialLR':
             scheduler = PolynomialLR(optimizer, total_iters=args.epochs, power=args.sched_power)
             if args.warmup_epochs>0:
                 scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=args.warmup_epochs, after_scheduler=scheduler)
