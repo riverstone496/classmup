@@ -68,9 +68,9 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
             break
         if args.log_delta_ntk:
             try:
-                print('Delta NTK')
                 delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, prefix=prefix, linear_training=linear_training)
             except RuntimeError as e:
+                print('Delta NTK')
                 print(e)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
