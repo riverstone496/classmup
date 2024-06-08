@@ -21,7 +21,7 @@ from utils.create_optim import create_optimizer, create_optimizer_for_head, crea
 import warmup_scheduler
 from functorch import make_functional_with_buffers
 from asdl.kernel import empirical_class_wise_direct_ntk
-
+from torch.optim import SGD, Adam
 import copy
 from models.linear_model import LinearizedModel
 from utils.set_mup import muP_set
@@ -67,7 +67,7 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
             wandb.run.summary['total_epochs_task'] = epoch
             break
         try:
-            delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, linear_training=linear_training)
+            delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, prefix=prefix, linear_training=linear_training)
         except RuntimeError as e:
             print(e)
     print(f'total_train_time: {total_train_time:.2f}s')
@@ -409,7 +409,7 @@ def linear_weight_delta( model, linear_model):
     if args.wandb:
         wandb.log(log)
 
-def delta_ntk(epoch, model, initial_model, dataset, multihead, linear_training=False):
+def delta_ntk(epoch, model, initial_model, dataset, multihead, prefix='', linear_training=False):
     model.zero_grad()
     initial_model.zero_grad()
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
@@ -451,7 +451,7 @@ def delta_ntk(epoch, model, initial_model, dataset, multihead, linear_training=F
         ntk_del = torch.norm(ntk-ntk_init) / torch.norm(ntk_init) 
         wandb.log({
             'epoch':epoch,
-            'ntk_del':ntk_del
+            prefix+'ntk_del':ntk_del
         })
         return ntk_del
 
@@ -511,6 +511,8 @@ if __name__=='__main__':
     parser.add_argument('--dataset_shuffle', action='store_true', default=False)
 
     parser.add_argument('--lr', type=float, default=1e-1,
+                        help='learning rate')
+    parser.add_argument('--linear_lr', type=float, default=1e-2,
                         help='learning rate')
     parser.add_argument('--pretrained_lr', type=float, default=1e-1,
                         help='learning rate')
@@ -722,10 +724,10 @@ if __name__=='__main__':
     initial_model = copy.deepcopy(model)
     if args.linear_training:
         model = LinearizedModel(model)
-        if args.parametrization == 'Spectral' or args.parametrization == 'Spectral_output_zero':
-            optimizer = create_spectral_optimizer(args, model, lr = args.lr)
-        else:
-            optimizer = create_optimizer(args, model, lr = args.lr)
+        if args.optim == 'sgd':
+            optimizer = SGD(model.parameters(), lr=args.base_width*args.linear_lr / args.width , momentum=args.momentum, weight_decay=args.weight_decay)
+        elif args.optim == 'adam':
+            optimizer = Adam(model.parameters(), lr= args.base_width*args.linear_lr / args.width, weight_decay=args.weight_decay)
         scheduler=None
         if args.head_init_epochs == -1:
             if args.head_init_iterations != -1:
