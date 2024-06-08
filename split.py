@@ -64,7 +64,7 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
             wandb.run.summary['total_epochs_task'] = epoch
             break
-        delta_ntk(epoch, model, initial_model, dataset)
+        delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
@@ -400,13 +400,14 @@ def linear_weight_delta( model, linear_model):
     if args.wandb:
         wandb.log(log)
 
-def delta_ntk(epoch, model, initial_model, dataset):
+def delta_ntk(epoch, model, initial_model, dataset, multihead):
     model.zero_grad()
     initial_model.zero_grad()
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
         model.train()
         initial_model.train()
         x, t = x.to(device), t.to(device)
+        t -= args.task1_class_head
         if args.loss_type == 'cross_entropy':
             if args.noise_eps>0 or args.class_reduction:
                 loss_func = CustomCrossEntropyLoss(epsilon = args.noise_eps, label_smoothing=args.label_smoothing, reduction=args.class_reduction_type)
@@ -421,10 +422,14 @@ def delta_ntk(epoch, model, initial_model, dataset):
                 loss_func = torch.nn.MSELoss()
             t2 = MSE_label(x, t)
 
-        y = model(x)
+        if multihead:
+            y = model(x, task=1)
+            y2 = initial_model(x, task=1)
+        else:
+            y = model(x)
+            y2 = initial_model(x)
         loss1 = loss_func(y,t2)
         loss1.backward()
-        y2 = initial_model(x)
         loss2 = loss_func(y2,t2)
         loss2.backward()
         ntk = empirical_class_wise_direct_ntk(model, x)
