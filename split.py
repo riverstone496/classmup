@@ -66,7 +66,10 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
             wandb.run.summary['total_epochs_task'] = epoch
             break
-        delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, linear_training=linear_training)
+        try:
+            delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, linear_training=linear_training)
+        except RuntimeError as e:
+            print(e)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
