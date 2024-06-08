@@ -56,7 +56,10 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
                 if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
                     wandb.run.summary['total_epochs_task'] = epoch
                     break
-        delta_ntk(epoch)
+        try:
+            delta_ntk(epoch, model, initial_model, dataset, prefix=prefix, linear_training=linear_training)
+        except RuntimeError as e:
+            print(e)
     print(f'total_train_time: {total_train_time:.2f}s')
     if args.epochs != 0:
         print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
@@ -357,7 +360,7 @@ def linear_weight_delta( model, linear_model):
     if args.wandb:
         wandb.log(log)
 
-def delta_ntk(epoch, model, initial_model, dataset):
+def delta_ntk(epoch, model, initial_model, dataset, prefix, linear_training):
     model.zero_grad()
     initial_model.zero_grad()
     for batch_idx, (x, t) in enumerate(dataset.train_loader):
@@ -391,7 +394,7 @@ def delta_ntk(epoch, model, initial_model, dataset):
         ntk_del = torch.norm(ntk-ntk_init) / torch.norm(ntk_init) 
         wandb.log({
             'epoch':epoch,
-            'ntk_del':ntk_del
+            prefix+'ntk_del':ntk_del
         })
         return ntk_del
 

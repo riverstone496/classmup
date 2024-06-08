@@ -21,7 +21,7 @@ from utils.create_optim import create_optimizer, create_optimizer_for_head, crea
 import warmup_scheduler
 from functorch import make_functional_with_buffers
 from asdl.kernel import empirical_class_wise_direct_ntk
-from torch.optim import SGD, Adam
+from torch.optim import SGD, Adam, LBFGS
 import copy
 from models.linear_model import LinearizedModel
 from utils.set_mup import muP_set
@@ -518,6 +518,8 @@ if __name__=='__main__':
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0,
                         help='learning rate')
+    parser.add_argument('--linear_momentum', type=float, default=0,
+                        help='learning rate')
     parser.add_argument('--init_lr', type=float, default=3e-3,
                         help='learning rate')
     parser.add_argument('--init_momentum', type=float, default=0,
@@ -526,6 +528,7 @@ if __name__=='__main__':
     parser.add_argument('--weight_decay', type=float, default=0)
     parser.add_argument('--lambda_reg', type=float, default=0)
     parser.add_argument('--optim', default='sgd')
+    parser.add_argument('--linear_optim', default='sgd')
     parser.add_argument('--load_base_shapes', type=str, default='width64.bsh',
                         help='file location to load base shapes from')
     parser.add_argument('--ckpt_folder', type=str, default='./ckpts/premutate_mlp_mnist/')
@@ -725,9 +728,9 @@ if __name__=='__main__':
     initial_model = copy.deepcopy(model)
     if args.linear_training:
         model = LinearizedModel(model)
-        if args.optim == 'sgd':
-            optimizer = SGD(model.parameters(), lr=args.base_width*args.linear_lr / args.width , momentum=args.momentum, weight_decay=args.weight_decay)
-        elif args.optim == 'adam':
+        if args.linear_optim == 'sgd':
+            optimizer = SGD(model.parameters(), lr=args.base_width*args.linear_lr / args.width , momentum=args.linear_momentum, weight_decay=args.weight_decay)
+        elif args.linear_optim == 'adam':
             optimizer = Adam(model.parameters(), lr= args.base_width*args.linear_lr / args.width, weight_decay=args.weight_decay)
         scheduler=None
         if args.head_init_epochs == -1:
