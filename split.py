@@ -66,10 +66,12 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         if args.train_acc_stop is not None and train_accuracy > args.train_acc_stop:
             wandb.run.summary['total_epochs_task'] = epoch
             break
-        try:
-            delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, prefix=prefix, linear_training=linear_training)
-        except RuntimeError as e:
-            print(e)
+        if args.log_delta_ntk:
+            try:
+                print('Delta NTK')
+                delta_ntk(epoch, model, initial_model, dataset, multihead=args.multihead, prefix=prefix, linear_training=linear_training)
+            except RuntimeError as e:
+                print(e)
     print(f'total_train_time: {total_train_time:.2f}s')
     print(f'avg_epoch_time: {total_train_time / args.epochs:.2f}s')
     print(f'avg_step_time: {total_train_time / args.epochs / dataset.num_steps_per_epoch * 1000:.2f}ms')
@@ -584,6 +586,8 @@ if __name__=='__main__':
     parser.add_argument('--log_weight_delta', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--log_h_delta', action='store_true', default=False,
+                        help='how many batches to wait before logging training status')
+    parser.add_argument('--log_delta_ntk', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--log_damping', action='store_true', default=False,
                         help='how many batches to wait before logging training status')

@@ -59,6 +59,7 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         try:
             delta_ntk(epoch, model, initial_model, dataset, prefix=prefix, linear_training=linear_training)
         except RuntimeError as e:
+            print('Delta NTK')
             print(e)
     print(f'total_train_time: {total_train_time:.2f}s')
     if args.epochs != 0:
@@ -512,7 +513,7 @@ if __name__=='__main__':
                         help='how many batches to wait before logging training status')
     parser.add_argument('--log_h_delta', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--log_damping', action='store_true', default=False,
+    parser.add_argument('--log_delta_ntk', action='store_true', default=False,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--num_workers', type=int, default=6)
     parser.add_argument('--train_size', type=int, default=-1)
