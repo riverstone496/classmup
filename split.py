@@ -129,7 +129,7 @@ def val(epoch, dataset, prefix = '', multihead=False, linear_training=False):
                prefix + 'val_accuracy': test_accuracy,
                prefix + 'max_val_accuracy':max_validation_acc,
                prefix + 'min_val_loss':min_validation_loss}
-        if pretrained_train_acc != 0 and 'pretrained' in prefix:
+        if pretrained_val_acc != 0 and 'pretrained' in prefix:
             log[prefix + 'val_accuracy_forgetting'] = pretrained_val_acc - test_accuracy
         wandb.log(log)
     print('Epoch {:.0f} = Val set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
@@ -278,6 +278,10 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
                    prefix + 'min_train_loss':min_train_loss,
                    prefix + 'dif/l2_':torch.norm(mtensor - init_tensor) / torch.norm(mtensor),
                    prefix + 'dif/abs_':torch.abs(mtensor - init_tensor).mean(dtype=torch.float32).item() / torch.abs(mtensor).mean(dtype=torch.float32).item(),
+                   prefix + 'wnorm/l2':torch.norm(mtensor),
+                   prefix + 'wnorm/abs':torch.abs(mtensor).mean(dtype=torch.float32).item() ,
+                   prefix + 'wnorm/l2_init':torch.norm(init_tensor),
+                   prefix + 'wnorm/abs_init':torch.abs(init_tensor).mean(dtype=torch.float32).item() ,
                    prefix + 'layer_dif/l2_':norm_layer_dic,
                    prefix + 'layer_dif/abs_':abs_norm_layer_dic
                    }
@@ -309,9 +313,11 @@ def get_weight_norm_delta(model_a, model_b, spectral=True):
             break
         diff = param_a - param_b
         norm_layer_dic[name_a] = torch.norm(diff, p=2) / torch.norm(param_a, p=2)
-        abs_norm_layer_dic[name_a] = torch.abs(diff).mean(dtype=torch.float32).item() / torch.abs(param_a).mean(dtype=torch.float32).item()
+        if torch.abs(param_a).mean(dtype=torch.float32).item() != 0:
+            abs_norm_layer_dic[name_a] = torch.abs(diff).mean(dtype=torch.float32).item() / torch.abs(param_a).mean(dtype=torch.float32).item()
         if spectral:
-            spectral_norm_layer_dic[name_a] = torch.linalg.norm(diff,ord=2) / torch.linalg.norm(param_a,ord=2)
+            if torch.linalg.norm(param_a,ord=2).item()!= 0:
+                spectral_norm_layer_dic[name_a] = torch.linalg.norm(diff,ord=2) / torch.linalg.norm(param_a,ord=2)
     if spectral:
         return norm_layer_dic, abs_norm_layer_dic, spectral_norm_layer_dic
     else:
@@ -730,6 +736,12 @@ if __name__=='__main__':
             folder_path = os.path.join(args.ckpt_folder, file_name)
         checkpoint = torch.load(folder_path)
         model.load_state_dict(checkpoint['model_state_dict'])
+
+        if args.multihead and 'zero' in args.parametrization:
+            torch.nn.init.zeros_(model.head2.weight)
+        elif args.multihead and 'muP' in args.parametrization:
+            model.head2.weight.data /= (args.width / args.base_width)**0.5
+
         if args.population_coding:
             pretrained_orthogonal_matrix = checkpoint['pretrained_orthogonal_matrix'][:args.task1_class_head, :]
             orthogonal_matrix = checkpoint['orthogonal_matrix'][:args.task2_class_head, :]
