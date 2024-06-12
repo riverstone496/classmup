@@ -62,7 +62,7 @@ def initialize_weight(model,b_input=0.5,b_hidden=0.5,b_output=0.5,output_nonzero
                 fan_out = width
         if isinstance(m,nn.Embedding):
             nn.init.normal_(m.weight.data, mean=0, std=embed_std / (fan_in**0.5))
-        else:
+        if isinstance(m,nn.Linear) or isinstance(m,nn.Conv2d):
             nn.init.kaiming_normal_(m.weight.data, a=1, mode='fan_in')
         if 'input' in name or 'block1.layer.0.conv1.weight' in name:
             m.weight.data /= fan_in**(b_input-0.5)

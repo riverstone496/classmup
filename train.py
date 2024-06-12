@@ -647,6 +647,7 @@ if __name__=='__main__':
         model = MultiHeadModel(args, dataset.img_size, dataset.num_classes, dataset.num_channels).to(device=device)
     else:
         model = create_model(dataset.img_size, dataset.num_classes, dataset.num_channels, args).to(device=device)
+        print(model)
         model = initialize_weight(model,b_input=args.b_input,b_hidden=args.b_hidden,b_output=args.b_output,output_nonzero=args.output_nonzero,output_var_mult=args.output_var_mult)
 
     print(model)
