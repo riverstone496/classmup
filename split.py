@@ -46,8 +46,8 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
     total_train_time=0
     # First Acc
     if not linear_training:
-        pretrained_train_acc = trainloss_all(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
-        pretrained_val_acc = val(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training)
+        pretrained_train_acc = trainloss_all(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training, multihead=args.multihead)
+        pretrained_val_acc = val(0, pretrained_dataset, prefix+'pretrained_', linear_training=linear_training, multihead=args.multihead)
     trainloss_all(0, dataset, prefix, multihead=args.multihead, linear_training=linear_training)
     val(0, dataset, prefix, multihead=args.multihead, linear_training=linear_training)
     wandb.run.summary["first_val_accuracy"] = max_validation_acc
@@ -94,10 +94,13 @@ def val(epoch, dataset, prefix = '', multihead=False, linear_training=False):
                 target -= args.task1_class_head
             if linear_training:
                 output = model(data)
-            elif multihead and 'pretrained' not in prefix:
-                output = model(data, task=1)
+            elif multihead:
+                if 'pretrained' not in prefix:
+                    output = model(data, task=1)
+                else:
+                    output = model(data, task=0)
             else:
-                output = model(data, task=0)
+                output = model(data)
             if args.population_coding:
                 if 'pretrained' in prefix:
                     target2 = pretrained_orthogonal_matrix[target]
@@ -152,10 +155,13 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False, linear_training=
                 target -= args.task1_class_head
             if linear_training:
                 output = model(data)
-            elif multihead and 'pretrained' not in prefix:
-                output = model(data, task=1)
+            elif multihead:
+                if 'pretrained' not in prefix:
+                    output = model(data, task=1)
+                else:
+                    output = model(data, task=0)
             else:
-                output = model(data, task=0)
+                output = model(data)
             if args.population_coding:
                 if 'pretrained' in prefix:
                     target2 = pretrained_orthogonal_matrix[target]
@@ -452,8 +458,8 @@ def delta_ntk(epoch, model, initial_model, dataset, multihead, prefix='', linear
             y = model(x, task=1)
             y2 = initial_model(x, task=1)
         else:
-            y = model(x, task=0)
-            y2 = initial_model(x, task=0)
+            y = model(x)
+            y2 = initial_model(x)
         loss1 = loss_func(y,t2)
         loss1.backward()
         loss2 = loss_func(y2,t2)
