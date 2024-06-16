@@ -90,7 +90,7 @@ def val(epoch, dataset, prefix = '', multihead=False, linear_training=False):
     with torch.no_grad():
         for data, target in dataset.val_loader:
             data, target = data.to(device), target.to(device)
-            if 'pretrained' not in prefix:
+            if multihead and 'pretrained' not in prefix:
                 target -= args.task1_class_head
             if linear_training:
                 output = model(data)
@@ -151,7 +151,7 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False, linear_training=
     with torch.no_grad():
         for data, target in dataset.train_val_loader:
             data, target = data.to(device), target.to(device)
-            if 'pretrained' not in prefix:
+            if multihead and 'pretrained' not in prefix:
                 target -= args.task1_class_head
             if linear_training:
                 output = model(data)
@@ -213,7 +213,8 @@ def train(epoch, prefix = '', train_iterations=-1, multihead=False, linear_train
             return
         model.train()
         x, t = x.to(device), t.to(device)
-        t -= args.task1_class_head
+        if multihead:
+            t -= args.task1_class_head
 
         if args.population_coding:
             loss_func = torch.nn.MSELoss()
