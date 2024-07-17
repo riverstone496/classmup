@@ -57,8 +57,8 @@ def main(epochs, iterations = -1, prefix = '', linear_training = False):
         train(epoch, prefix, iterations, multihead=args.multihead, linear_training=linear_training)
         total_train_time += time.time() - start
         if not linear_training:
-            trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training)
-            val(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training)
+            trainloss_all(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training, multihead=args.multihead)
+            val(epoch, pretrained_dataset, prefix+'pretrained_',linear_training=linear_training, multihead=args.multihead)
         train_accuracy = trainloss_all(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
         val_accuracy = val(epoch, dataset, prefix, multihead=args.multihead,linear_training=linear_training)
         if args.log_h_delta:
@@ -156,10 +156,10 @@ def trainloss_all(epoch, dataset, prefix = '', multihead=False, linear_training=
             if linear_training:
                 output = model(data)
             elif multihead:
-                if 'pretrained' not in prefix:
-                    output = model(data, task=1)
-                else:
+                if 'pretrained' in prefix:
                     output = model(data, task=0)
+                else:
+                    output = model(data, task=1)
             else:
                 output = model(data)
             if args.population_coding:
